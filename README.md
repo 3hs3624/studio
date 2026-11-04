@@ -2,7 +2,7 @@
 
 IBM Maximo IT가 다루는 업무 영역을 참고하여 IT 서비스·자산·구성·변경·구매·계약을 연결하는 독립 제품을 설계합니다. IBM의 공식 제품이나 제휴 프로젝트가 아닙니다.
 
-**현재 상태: 기획 v0.1. 실행 가능한 애플리케이션은 아직 없습니다.** IBM 기능과의 정확한 대응은 검증 전입니다.
+**현재 상태: 기획·첫 구현 상세 설계 v0.2. 실행 가능한 애플리케이션은 아직 없습니다.** 일부 IBM 공식 기능 근거를 확인했으며, 전체 동등성·라이선스 포함 여부는 검증 전입니다.
 
 ## 설계 문서
 
@@ -11,6 +11,16 @@ IBM Maximo IT가 다루는 업무 영역을 참고하여 IT 서비스·자산·�
 - [아키텍처](docs/architecture.md): 시스템 경계·보안·연동
 - [데이터 모델](docs/domain-model.md): 핵심 엔터티와 정합성
 - [로드맵](docs/roadmap.md): 의존성·완료 조건·다음 작업
+
+## 첫 구현 상세 설계
+
+- [IBM 공식 근거·차이](docs/ibm-evidence.md)
+- [화면·권한·상태 전이](docs/first-slice/screens.md)
+- [API 계약](docs/first-slice/api-contract.md)
+- [DB 명세](docs/first-slice/database.md)
+- [인수 계획](docs/first-slice/acceptance.md)
+
+총 45개 후보 기능을 관리합니다. 첫 구현 묶음은 장애 접수·배정·해결·확인, 조직·그룹 권한과 자산·CI 조회·연결입니다. 상세 설계는 구현 완료를 의미하지 않습니다.
 
 ## 제품 방향
 
