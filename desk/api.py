@@ -6,6 +6,7 @@ from django.db.models import Q
 from django.core.exceptions import RequestDataTooBig
 from . import services as s
 from .models import Person, Group, Membership, Ticket, Asset, ConfigurationItem, Comment, StatusHistory
+from .business_time import CalendarError
 
 def error(request, code, message, status):
     return JsonResponse({'error':{'code':code,'message':message,'fields':{},
@@ -40,6 +41,8 @@ def endpoint(methods):
                 return result if isinstance(result,HttpResponse) else JsonResponse(result)
             except s.BusinessError as exc:
                 return error(request,exc.code,exc.message,exc.status)
+            except CalendarError as exc:
+                return error(request,'INVALID_CALENDAR',str(exc),422)
             except (json.JSONDecodeError,UnicodeDecodeError):
                 return error(request,'INVALID_JSON','올바른 JSON이 필요합니다.',400)
             except RequestDataTooBig:
@@ -202,3 +205,34 @@ def members(request,id,person_id):
 @endpoint(['PUT'])
 def grants(request,id):
     return command(request,'admin_roles',id)
+
+@endpoint(['GET','POST'])
+def sla_calendars(request):
+    from .sla import require_manager,calendar_data
+    from .models import BusinessCalendar
+    require_manager(request.actor)
+    if request.method=='POST':
+        return command(request,'sla_calendar')
+    params=query(request,['limit','cursor'])
+    return s.page(request.actor,BusinessCalendar.objects.filter(organization=request.actor.organization),params,calendar_data,'sla_calendars')
+
+@endpoint(['GET','POST'])
+def sla_policies(request):
+    from .sla import require_manager,policy_data
+    from .models import SLAPolicy
+    require_manager(request.actor)
+    if request.method=='POST':
+        return command(request,'sla_policy')
+    params=query(request,['limit','cursor'])
+    return s.page(request.actor,SLAPolicy.objects.filter(organization=request.actor.organization),params,policy_data,'sla_policies')
+
+@endpoint(['GET'])
+def notifications(request):
+    from .sla import visible_notifications,notification_data
+    params=query(request,['limit','cursor'])
+    qs=visible_notifications(request.actor).select_related('ticket','alert')
+    return s.page(request.actor,qs,params,notification_data,'notifications')
+
+@endpoint(['POST'])
+def notification_read(request,id):
+    return command(request,'notification_read',id)

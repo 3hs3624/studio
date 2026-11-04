@@ -44,7 +44,7 @@ def staff(p, t):
     return manager(p) or (t.status != 'NEW' and t.group_id in group_ids(p))
 
 def ticket_query(p, queue=False):
-    q = Ticket.objects.filter(organization=p.organization).select_related('incident','requested_by','group','assignee')
+    q = Ticket.objects.filter(organization=p.organization).select_related('incident','requested_by','group','assignee','sla_instance')
     if manager(p):
         return q if queue else q.filter(requested_by=p)
     permitted = Q(group_id__in=group_ids(p)) & ~Q(status='NEW')
@@ -113,11 +113,13 @@ def can_transition(p, t, action):
     return staff(p,t) and (t.assignee_id == p.id or manager(p))
 
 def ticket_data(p, t, detail=True):
+    from .sla import summary
     inc = t.incident
     d = {'id':str(t.id), 'number':t.number, 'title':t.title, 'status':t.status,
          'priority':f'P{inc.priority}', 'group':{'id':str(t.group_id),'name':t.group.name},
          'assignee':person_data(t.assignee) if t.assignee else None,
-         'created_at':t.created_at.isoformat(), 'updated_at':t.updated_at.isoformat(), 'version':t.row_version}
+         'created_at':t.created_at.isoformat(), 'updated_at':t.updated_at.isoformat(), 'version':t.row_version,
+         'sla':summary(t)}
     if not detail:
         return d
     links = []
@@ -166,7 +168,14 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
-    if operation.startswith('admin_'):
+    if operation in ('sla_calendar','sla_policy'):
+        from .sla import require_manager
+        require_manager(p)
+    elif operation=='notification_read':
+        from .sla import visible_notifications
+        if not visible_notifications(p).filter(id=target).exists():
+            fail('NOT_FOUND','알림을 찾을 수 없습니다.',404)
+    elif operation.startswith('admin_'):
         require_admin(p)
         model = Group if operation=='admin_members' else Person
         if not model.objects.filter(id=target,organization=p.organization).exists():
@@ -220,6 +229,18 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op in ('sla_calendar','sla_policy'):
+        from .sla import publish
+        return publish(p,op,data,request_id)
+    if op=='notification_read':
+        from .sla import visible_notifications
+        from django.utils import timezone
+        check_fields(data,[])
+        n=visible_notifications(p).select_for_update().get(id=target)
+        if n.read_at is None:
+            n.read_at=timezone.now()
+            n.save(update_fields=['read_at'])
+        return {'id':str(n.id),'read_at':n.read_at.isoformat()},200
     if op == 'create':
         check_fields(data,['title','description','impact','urgency','resources'],['title','description','impact','urgency'])
         title, description = text(data,'title',200), text(data,'description')
@@ -239,6 +260,8 @@ def mutate(p, op, data, request_id, target, subtarget):
             attach(p,t,item)
         history(p,t,'')
         record(p,t,'INCIDENT_CREATED',request_id,after={'status':t.status,'version':1})
+        from .sla import apply_to_new_ticket
+        apply_to_new_ticket(t,p)
         return ticket_data(p,t),201
 
     if op.startswith('admin_'):
@@ -294,6 +317,8 @@ def mutate(p, op, data, request_id, target, subtarget):
         bump(t)
         history(p,t,old,reason or resolution)
         record(p,t,'INCIDENT_'+action,request_id,{'status':old},{'status':t.status,'version':t.row_version})
+        from .sla import transition
+        transition(t,action,p)
         return ticket_data(p,t),200
 
     if op == 'comment':

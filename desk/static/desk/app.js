@@ -18,6 +18,14 @@ document.querySelectorAll('.api-form').forEach(form => {
       payload.roles = inputs.getAll('roles');
     } else if (kind === 'membership') {
       payload.active = inputs.get('active') === 'on';
+    } else if (kind === 'sla-calendar') {
+      Object.assign(payload, {name: inputs.get('name'), timezone: inputs.get('timezone'),
+        weekdays:inputs.getAll('weekdays').map(Number), starts_at:inputs.get('starts_at'), ends_at:inputs.get('ends_at'),
+        holidays:inputs.get('holidays').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean)});
+    } else if (kind === 'sla-policy') {
+      Object.assign(payload, {name:inputs.get('name'), calendar_id:inputs.get('calendar_id'), priority:number('priority'),
+        response_minutes:number('response_minutes'), resolution_minutes:number('resolution_minutes'),
+        warning_percent:number('warning_percent'), pause_on_pending:inputs.get('pause_on_pending')==='on'});
     }
     if ((kind === 'attach' || kind === 'create') && inputs.get('resource')) {
       const [resource_type, resource_id] = inputs.get('resource').split(':');

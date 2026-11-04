@@ -66,3 +66,7 @@ Idempotency-Key: demo-resolve-001
 {"action":"RESOLVE","resolution":"네트워크 설정을 복구하고 연결을 확인했습니다.","expected_version":4}
 
 응답: 200, status RESOLVED, version 5. action은 START/WAIT/RESUME/RESOLVE/CLOSE/REOPEN. WAIT·REOPEN에는 reason, RESOLVE에는 resolution을 요구합니다. 전체 전이표는 [화면 명세](screens.md)를 따릅니다. 예시는 합성 데이터이며 실행된 요청이 아닙니다.
+
+## SLA 확장
+
+티켓 응답의 sla 필드, 달력·정책 게시, 알림 조회·읽음 API는 [SLA 추가 명세](../sla.md)를 따릅니다. 기존 API 경로·상태 전이·인증 규약은 유지합니다.

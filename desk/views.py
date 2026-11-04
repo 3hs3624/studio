@@ -20,9 +20,11 @@ class StudioLoginView(LoginView):
         return result
 
 def context(request):
+    from .sla import visible_notifications
     p=s.actor_for(request.user)
     return {'actor':p,'roles':s.roles(p),'org':p.organization,'can_work':bool(s.group_ids(p)) or s.manager(p),
-            'is_admin':'ORG_ADMIN' in s.roles(p)}
+            'is_admin':'ORG_ADMIN' in s.roles(p),'is_service_manager':s.manager(p),
+            'unread_notifications':visible_notifications(p).filter(read_at__isnull=True).count()}
 
 @login_required
 def home(request):
@@ -109,5 +111,29 @@ def admin_access(request):
         c['memberships']=[{'group':g,'people':[{'person':item['person'],
                  'checked':Membership.objects.filter(group=g,person=item['person']).exists()} for item in people]} for g in c['groups']]
         return render(request,'desk/access.html',c)
+    except s.BusinessError as exc:
+        return HttpResponse(exc.message,status=exc.status)
+
+@login_required
+def sla_settings(request):
+    from .sla import require_manager
+    from .models import BusinessCalendar,SLAPolicy
+    try:
+        c=context(request)
+        require_manager(c['actor'])
+        c.update(calendars=BusinessCalendar.objects.filter(organization=c['org']).order_by('-created_at'),
+                 policies=SLAPolicy.objects.filter(organization=c['org']).select_related('calendar').order_by('priority','-version'))
+        return render(request,'desk/sla-settings.html',c)
+    except s.BusinessError as exc:
+        return HttpResponse(exc.message,status=exc.status)
+
+@login_required
+def notifications(request):
+    from .sla import visible_notifications,notification_data
+    try:
+        c=context(request)
+        qs=visible_notifications(c['actor']).select_related('ticket','alert')
+        c.update(s.page(c['actor'],qs,request.GET.dict(),notification_data,'notifications'))
+        return render(request,'desk/notifications.html',c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message,status=exc.status)

@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from desk.models import Organization, Person, Group, Membership, RoleGrant, Asset, ConfigurationItem
+from desk.models import Organization, Person, Group, Membership, RoleGrant, Asset, ConfigurationItem, BusinessCalendar, SLAPolicy
 
 class Command(BaseCommand):
     help = 'Create synthetic local demo accounts. Prompts for a password; never enables authentication bypass.'
@@ -30,4 +30,9 @@ class Command(BaseCommand):
                 Membership.objects.create(organization=org,person=person,group=group)
         Asset.objects.create(organization=org,asset_no='PC-001',name='업무용 노트북',model='Business Laptop',location='서울 사무실',portal_visible=True)
         ConfigurationItem.objects.create(organization=org,ci_no='CI-001',name='사내 네트워크',type='NETWORK',portal_visible=True)
+        calendar=BusinessCalendar.objects.create(organization=org,name='평일 업무시간',timezone='Asia/Seoul',
+                    weekdays=[0,1,2,3,4],starts_at='09:00',ends_at='18:00',holidays=[])
+        for priority,response,resolution in [(1,15,60),(2,30,240),(3,60,480),(4,120,1440),(5,240,2400)]:
+            SLAPolicy.objects.create(organization=org,calendar=calendar,name=f'장애 P{priority}',priority=priority,
+                    version=1,response_minutes=response,resolution_minutes=resolution)
         self.stdout.write(self.style.SUCCESS('Created local accounts: employee, agent, manager, orgadmin. Use your chosen password.'))

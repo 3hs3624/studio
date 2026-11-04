@@ -24,4 +24,7 @@ urlpatterns = [
     path('api/v1/admin/access',api.access),path('api/v1/admin/groups',api.groups),
     path('api/v1/admin/groups/<uuid:id>/members/<uuid:person_id>',api.members),
     path('api/v1/admin/persons/<uuid:id>/roles',api.grants),
+    path('work/sla',views.sla_settings),path('notifications',views.notifications),
+    path('api/v1/sla/calendars',api.sla_calendars),path('api/v1/sla/policies',api.sla_policies),
+    path('api/v1/notifications',api.notifications),path('api/v1/notifications/<uuid:id>/read',api.notification_read),
 ]

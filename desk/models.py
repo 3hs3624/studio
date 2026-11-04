@@ -158,3 +158,75 @@ class IdempotencyRecord(Base):
     response_body = models.JSONField(default=dict)
     class Meta:
         constraints = [models.UniqueConstraint(fields=['organization','actor','operation','key'], name='idempotency_unique')]
+
+class BusinessCalendar(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    name = models.CharField(max_length=200)
+    timezone = models.CharField(max_length=80)
+    weekdays = models.JSONField()
+    starts_at = models.CharField(max_length=5)
+    ends_at = models.CharField(max_length=5)
+    holidays = models.JSONField(default=list)
+
+class SLAPolicy(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    calendar = models.ForeignKey(BusinessCalendar, on_delete=models.PROTECT)
+    name = models.CharField(max_length=200)
+    priority = models.PositiveSmallIntegerField()
+    version = models.PositiveIntegerField()
+    response_minutes = models.PositiveIntegerField()
+    resolution_minutes = models.PositiveIntegerField()
+    warning_percent = models.PositiveSmallIntegerField(default=80)
+    pause_on_pending = models.BooleanField(default=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','priority','version'],name='sla_policy_version'),
+            models.CheckConstraint(condition=Q(priority__range=(1,5)),name='sla_priority_range'),
+            models.CheckConstraint(condition=Q(response_minutes__gt=0,resolution_minutes__gt=0),name='sla_positive_budgets'),
+            models.CheckConstraint(condition=Q(warning_percent__range=(1,99)),name='sla_warning_range')]
+
+class SLAInstance(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    ticket = models.OneToOneField(Ticket, on_delete=models.PROTECT, related_name='sla_instance')
+    policy = models.ForeignKey(SLAPolicy, on_delete=models.PROTECT)
+    snapshot = models.JSONField()
+    accounted_at = models.DateTimeField()
+    response_elapsed_us = models.PositiveBigIntegerField(default=0)
+    resolution_elapsed_us = models.PositiveBigIntegerField(default=0)
+    response_due_at = models.DateTimeField()
+    resolution_due_at = models.DateTimeField()
+    response_completed_at = models.DateTimeField(null=True)
+    resolved_at = models.DateTimeField(null=True)
+    paused_at = models.DateTimeField(null=True)
+    next_evaluation_at = models.DateTimeField(null=True)
+    class Meta:
+        indexes = [models.Index(fields=['response_due_at'],condition=Q(response_completed_at__isnull=True),name='sla_response_pending'),
+                   models.Index(fields=['resolution_due_at'],condition=Q(resolved_at__isnull=True,paused_at__isnull=True),name='sla_resolution_pending'),
+                   models.Index(fields=['next_evaluation_at'],condition=Q(next_evaluation_at__isnull=False),name='sla_next_evaluation')]
+
+class SLAClockEvent(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    instance = models.ForeignKey(SLAInstance, on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person, null=True, on_delete=models.PROTECT)
+    kind = models.CharField(max_length=30)
+    occurred_at = models.DateTimeField()
+    detail = models.JSONField(default=dict)
+
+class SLAAlert(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    instance = models.ForeignKey(SLAInstance, on_delete=models.PROTECT)
+    goal = models.CharField(max_length=20)
+    level = models.CharField(max_length=10)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['instance','goal','level'],name='sla_alert_once'),
+                       models.CheckConstraint(condition=Q(goal__in=['RESPONSE','RESOLUTION']),name='sla_goal'),
+                       models.CheckConstraint(condition=Q(level__in=['WARNING','BREACH']),name='sla_alert_level')]
+
+class Notification(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    recipient = models.ForeignKey(Person, on_delete=models.PROTECT)
+    ticket = models.ForeignKey(Ticket, on_delete=models.PROTECT)
+    alert = models.ForeignKey(SLAAlert, on_delete=models.PROTECT)
+    read_at = models.DateTimeField(null=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['recipient','alert'],name='notification_recipient_alert')]
+        indexes = [models.Index(fields=['recipient','-created_at','-id'])]
