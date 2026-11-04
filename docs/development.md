@@ -1,0 +1,49 @@
+# 로컬 실행·검증 안내
+
+## 실행
+
+Python 3.12 환경에서 저장소 루트에서 실행합니다. 아래 명령은 로컬 개발 전용입니다.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export DEBUG=1
+python manage.py migrate
+python manage.py setup_demo
+python manage.py runserver 127.0.0.1:8000
+```
+
+http://127.0.0.1:8000/login/ 에 접속합니다. setup_demo는 비밀번호를 직접 입력받으며 기존 조직 데이터가 있으면 거부합니다. 합성 계정은 employee(직원), agent(담당자), manager(서비스 관리자), orgadmin(조직 관리자)입니다. 모두 사용자가 선택한 로컬 비밀번호를 사용합니다. 공개 기본 비밀번호는 없습니다. 운영 모드에서는 데모 생성을 거부합니다.
+
+직원으로 장애 접수→manager로 서비스 데스크에서 agent에 배정→agent로 처리 시작·해결→employee로 해결 확인·종료 순서로 확인합니다. 조직 관리자는 별도 역할이며 자동으로 다른 사람의 장애 처리 권한을 갖지 않습니다.
+
+## 자동 검증
+
+```bash
+DEBUG=1 python manage.py check
+DEBUG=1 python manage.py makemigrations --check --dry-run
+DEBUG=1 python manage.py test --verbosity 2
+DEBUG=1 python manage.py process_outbox
+```
+
+현재 테스트는 총 30개이며 SQLite에서는 PostgreSQL 전용 동시성 2개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
+
+PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT로 설정합니다. 테스트 DB를 생성할 수 있는 **테스트 전용** 권한이 필요합니다. 운영 계정에는 DB 생성 권한을 부여하지 않습니다. CI에 SQLite·PostgreSQL 16 검증 job을 정의했습니다.
+
+## 운영 전 준비
+
+운영 모드(DEBUG=0)는 SECRET_KEY·DB_ENGINE=postgresql·DB_NAME·DB_USER·실제 ALLOWED_HOSTS를 요구합니다. SECRET_KEY는 충분한 길이의 난수로 비밀 저장소에서 주입하십시오. HTTPS·TLS 프록시 설정·정적 파일 제공·프로세스 관리자·공유 로그인 제한·백업/복원·부하 목표는 환경에 맞게 구성해야 합니다. 신뢰할 프록시가 확정되지 않아 forwarded 헤더를 임의 신뢰하지 않습니다.
+
+마이그레이션 되돌리기는 데이터 삭제를 일으킬 수 있으므로 disposable 테스트 DB에서만 roundtrip 검증합니다. 운영 롤백 수단으로 migrate desk zero를 사용하지 않습니다. 감사·상태 이력·댓글은 DB 트리거로 append-only이며 보존·익명화는 후속 정책입니다.
+
+## 첫 설계와의 구현 차이
+
+- Person과 Django auth_user 1:1을 사용합니다. 별도 외부 Identity·복수 조직·조직 전환은 후속입니다.
+- organization_id와 관계의 조직 일치는 SQLite/PostgreSQL DB 트리거로 강제합니다. 초기 설계의 복합 외래키 대신 이 방식을 적용했습니다. Incident는 Ticket PK를 공유하고 조직을 중복 저장하지 않습니다.
+- 고정 상태 전이·우선순위 표를 사용합니다. 범용 양식·승인·규칙·SLA 엔진은 아직 없습니다.
+- 자산·CI는 조회·장애 연결만 가능합니다. 등록·수정·지급·재고·토폴로지·수집은 후속입니다.
+- idempotency 응답은 업무 결과 스냅샷을 유지하면서 **현재 권한에 맞게 내부 필드·자산·allowed_actions를 다시 제한**합니다. 권한 변경 후 byte 단위 동일 응답을 보장하지 않습니다. 키는 자동 삭제하지 않아 24시간 이상 보존되며 정리 정책은 후속입니다.
+- outbox는 로컬 sink만 제공합니다. 5회 실패한 건은 중단하며 재처리 관리 UI·외부 전달 어댑터는 없습니다.
+- 파일 업로드·외부 알림·이메일 접수·지식·구매·서비스 카탈로그·SSO는 미구현입니다.
+- 검색·접수 폼·자산 선택·관리 화면은 첫 규모를 위한 구현이며 대규모 목록 최적화·접근성 정식 감사·운영 부하·복원 리허설은 아직 수행하지 않았습니다.

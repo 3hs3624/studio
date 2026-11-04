@@ -1,0 +1,57 @@
+name: Django checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    env:
+      DEBUG: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py check
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test --verbosity 2
+      - run: python manage.py migrate
+      - run: python manage.py migrate desk zero
+      - run: python manage.py migrate
+      - run: python manage.py collectstatic --noinput
+  postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: studio_test
+          POSTGRES_USER: studio_test
+          POSTGRES_PASSWORD: local-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DEBUG: '1'
+      DB_ENGINE: postgresql
+      DB_NAME: studio_test
+      DB_USER: studio_test
+      DB_PASSWORD: local-ci-only
+      DB_HOST: localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py test --verbosity 2
+      - run: python manage.py migrate
+      - run: python manage.py migrate desk zero
+      - run: python manage.py migrate

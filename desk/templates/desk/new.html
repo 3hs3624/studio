@@ -1,0 +1,10 @@
+{% extends 'desk/base.html' %}{% block content %}
+<a class="back" href="/portal/incidents">← 요청 목록</a><div class="page-heading"><div><p class="eyebrow">NEW INCIDENT</p><h1>장애 접수</h1><p class="muted">발생한 현상을 알려주시면 담당자가 확인하겠습니다.</p></div></div>
+<div class="content-grid"><section class="panel form-panel"><form class="api-form" data-kind="create" data-url="/api/v1/incidents">{% csrf_token %}
+<div class="form-error error" role="alert" tabindex="-1" hidden></div>
+<label for="title">제목 <span class="required">*</span></label><input id="title" name="title" maxlength="200" required placeholder="어떤 문제가 발생했습니까?">
+<label for="description">상세 내용 <span class="required">*</span></label><textarea id="description" name="description" maxlength="10000" rows="7" required placeholder="발생 시점, 오류 메시지와 업무 영향을 설명해 주십시오."></textarea>
+<div class="form-row"><div><label for="impact">영향도</label><select id="impact" name="impact"><option value="3">낮음 · 개인 업무</option><option value="2">보통 · 일부 부서</option><option value="1">높음 · 조직 전체</option></select></div><div><label for="urgency">긴급도</label><select id="urgency" name="urgency"><option value="3">낮음 · 우회 가능</option><option value="2">보통 · 업무 지연</option><option value="1">높음 · 업무 중단</option></select></div></div>
+<label for="resource">관련 자산 또는 CI <span class="muted">선택</span></label><select name="resource" id="resource"><option value="">선택하지 않음</option>{% for a in assets %}<option value="ASSET:{{ a.id }}">자산 · {{ a.name }}</option>{% endfor %}{% for c in cis %}<option value="CI:{{ c.id }}">CI · {{ c.name }}</option>{% endfor %}</select>
+<div class="form-footer"><a class="secondary" href="/portal/incidents">취소</a><button class="primary" type="submit">장애 접수 →</button></div></form></section>
+<aside class="hint-card"><span class="hint-icon">i</span><h2>접수 후 진행 과정</h2><ol><li>서비스 데스크 접수</li><li>담당자 배정 및 확인</li><li>장애 처리와 해결 안내</li><li>요청자의 확인 후 종료</li></ol><p>우선순위는 영향도와 긴급도를 기준으로 자동 계산됩니다.</p></aside></div>{% endblock %}
