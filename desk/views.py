@@ -25,6 +25,7 @@ def context(request):
     p=s.actor_for(request.user)
     return {'actor':p,'roles':s.roles(p),'org':p.organization,'can_work':bool(s.group_ids(p)) or s.manager(p),
             'is_admin':'ORG_ADMIN' in s.roles(p),'is_service_manager':s.manager(p),
+            'is_asset_manager':'ASSET_MANAGER' in s.roles(p),
             'pending_approvals':RequestApproval.objects.filter(organization=p.organization,approver=p,status='PENDING',ticket__status='PENDING_APPROVAL').count(),
             'unread_notifications':visible_notifications(p).filter(read_at__isnull=True).count()}
 
@@ -92,12 +93,12 @@ def inventory(request,ci=False,id=None):
         item=qs.filter(id=id).first()
         if not item:
             return HttpResponse('대상을 찾을 수 없습니다.',status=404)
-        c.update(item=s.resource_data(item),ci=ci)
+        c.update(item=s.resource_data(item,c['actor']),ci=ci)
         return render(request,'desk/resource-detail.html',c)
     q=request.GET.get('q','')[:200]
     if q:
         qs=qs.filter(name__icontains=q)
-    c.update(s.page(c['actor'],qs,request.GET.dict(),s.resource_data,model.__name__))
+    c.update(s.page(c['actor'],qs,request.GET.dict(),lambda obj:s.resource_data(obj,c['actor']),model.__name__))
     c.update(ci=ci,q=q)
     return render(request,'desk/resources.html',c)
 
@@ -220,6 +221,10 @@ def request_detail(request,id):
                     assignments.append(member.person)
         c.update(ticket=data,answers=answers,comments=comments,assignments=assignments,
                  activity=StatusHistory.objects.filter(ticket=t).select_related('actor').order_by('created_at'))
+        from .assets import manager as asset_manager, query as asset_query
+        c['can_issue_asset']=asset_manager(p) and catalog.request_staff(p,t) and t.status=='IN_PROGRESS'
+        if c['can_issue_asset']:
+            c['stock_assets']=asset_query(p).filter(status='STOCK')
         return render(request,'desk/request-detail.html',c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message,status=exc.status)

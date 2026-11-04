@@ -76,6 +76,8 @@ def command(request,operation,target=None,subtarget=None):
         response['Location']='/api/v1/incidents/'+result['id']
     if operation=='req_create':
         response['Location']='/api/v1/requests/'+result['id']
+    if operation=='asset_create':
+        response['Location']='/api/v1/assets/'+result['id']
     return response
 
 def parse_version(raw):
@@ -165,17 +167,66 @@ def resource_read(request,model,id=None):
         obj=qs.filter(id=id).first()
         if not obj:
             s.fail('NOT_FOUND','대상을 찾을 수 없습니다.',404)
-        return s.resource_data(obj)
+        return s.resource_data(obj,request.actor)
     params=query(request,['q','limit','cursor'])
     if params.get('q'):
         if len(params['q'])>200:
             s.fail('INVALID_QUERY','검색어는 최대 200자입니다.',400)
         qs=qs.filter(name__icontains=params['q'])
-    return s.page(request.actor,qs,params,s.resource_data,model.__name__)
+    return s.page(request.actor,qs,params,lambda obj:s.resource_data(obj,request.actor),model.__name__)
+
+@endpoint(['GET','POST','PUT'])
+def assets(request,id=None):
+    if request.method=='POST' and id is None:
+        return command(request,'asset_create')
+    if request.method=='PUT' and id:
+        return command(request,'asset_update',id)
+    if request.method!='GET':
+        response=error(request,'METHOD_NOT_ALLOWED','허용되지 않은 메서드입니다.',405)
+        response['Allow']='GET, PUT' if id else 'GET, POST'
+        return response
+    if id is None:
+        from .models import ASSET_STATUSES
+        params=query(request,['q','status','limit','cursor'])
+        if params.get('status') and params['status'] not in ASSET_STATUSES:
+            s.fail('INVALID_STATUS','자산 상태를 확인하십시오.',400)
+        qs=s.resources_query(request.actor,Asset)
+        if params.get('status'):
+            qs=qs.filter(status=params['status'])
+        if params.get('q'):
+            if len(params['q'])>200:
+                s.fail('INVALID_QUERY','검색어는 최대 200자입니다.',400)
+            qs=qs.filter(Q(name__icontains=params['q'])|Q(asset_no__icontains=params['q']))
+        return s.page(request.actor,qs,params,lambda a:s.resource_data(a,request.actor),'Asset')
+    return resource_read(request,Asset,id)
+
+@endpoint(['POST'])
+def asset_actions(request,id):
+    return command(request,'asset_action',id)
 
 @endpoint(['GET'])
-def assets(request,id=None):
-    return resource_read(request,Asset,id)
+def asset_history(request,id):
+    from . import assets as service
+    params=query(request,['limit','cursor'])
+    qs=service.history_query(request.actor,id)
+    if not service.full_reader(request.actor) and not qs.exists():
+        s.fail('NOT_FOUND','자산 이력을 찾을 수 없습니다.',404)
+    if service.full_reader(request.actor):
+        service.get_asset(request.actor,id)
+    return s.page(request.actor,qs,params,lambda h:service.history_data(h,request.actor),'asset_history:'+str(id))
+
+@endpoint(['GET'])
+def my_assets(request):
+    params=query(request,['limit','cursor'])
+    qs=Asset.objects.filter(organization=request.actor.organization,custodian=request.actor).select_related('custodian')
+    return s.page(request.actor,qs,params,lambda a:s.resource_data(a,request.actor),'my_assets')
+
+@endpoint(['GET'])
+def my_asset_history(request):
+    from . import assets as service
+    params=query(request,['limit','cursor'])
+    qs=service.history_query(request.actor,personal=True)
+    return s.page(request.actor,qs,params,lambda h:service.history_data(h,request.actor,True),'my_asset_history')
 
 @endpoint(['GET'])
 def cis(request,id=None):

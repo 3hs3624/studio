@@ -89,10 +89,16 @@ def bump(obj):
     obj.save()
 
 def resources_query(p, model):
+    if model is Asset:
+        from .assets import query
+        return query(p)
     q = model.objects.filter(organization=p.organization)
     return q if 'RESOURCE_READER' in roles(p) else q.filter(portal_visible=True)
 
-def resource_data(obj):
+def resource_data(obj,p=None):
+    if isinstance(obj,Asset):
+        from .assets import data
+        return data(obj,p)
     fields = ['id','asset_no','name','model','location'] if isinstance(obj, Asset) else ['id','ci_no','name','type','status']
     return {f: str(getattr(obj, f)) for f in fields}
 
@@ -169,7 +175,10 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
-    if operation=='catalog_publish' or operation.startswith('req_'):
+    if operation.startswith('asset_'):
+        from .assets import authorize
+        authorize(p,operation,target)
+    elif operation=='catalog_publish' or operation.startswith('req_'):
         from .catalog import authorize
         authorize(p,operation,target)
     elif operation in ('sla_calendar','sla_policy'):
@@ -213,6 +222,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
                 if not permitted:
                     fail('FORBIDDEN','현재 상태 변경 권한이 없습니다.',403)
             result = dict(previous.response_body)
+            if operation.startswith('asset_'):
+                from .assets import replay
+                result=replay(p,operation,data,result)
             if operation=='catalog_publish' or operation.startswith('req_'):
                 from .catalog import replay
                 result=replay(p,operation,data,result,target)
@@ -236,6 +248,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op.startswith('asset_'):
+        from .assets import mutate as mutate_asset
+        return mutate_asset(p,op,data,request_id,target)
     if op=='catalog_publish' or op.startswith('req_'):
         from .catalog import mutate as mutate_request
         return mutate_request(p,op,data,request_id,target)

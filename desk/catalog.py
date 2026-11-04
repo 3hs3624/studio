@@ -207,6 +207,8 @@ def request_data(p,t,detail=True):
         can_comment_internal=request_staff(p,t),can_decide=bool(approval and approval.approver_id==p.id and approval.status=='PENDING' and t.status=='PENDING_APPROVAL' and not t.requested_by_id==p.id),
         approval={'approver':s.person_data(approval.approver),'status':approval.status,
                   'decision':decision.decision if decision else None,'reason':decision.reason if decision else None} if approval else None)
+    from .assets import request_asset_events
+    result['asset_events']=request_asset_events(p,t)
     return result
 
 def notify(p,t,event,kind,recipients):

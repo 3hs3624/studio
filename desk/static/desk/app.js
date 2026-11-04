@@ -53,6 +53,25 @@ document.querySelectorAll('.api-form').forEach(form => {
       Object.assign(payload,{decision:inputs.get('decision'),reason:inputs.get('reason')});
     } else if (kind === 'request-action') {
       Object.assign(payload,{action:inputs.get('action'),reason:inputs.get('reason')});
+    } else if (kind === 'asset-create' || kind === 'asset-update') {
+      Object.assign(payload,{name:inputs.get('name'),manufacturer:inputs.get('manufacturer'),model:inputs.get('model'),
+        serial_number:inputs.get('serial_number'),portal_visible:inputs.get('portal_visible')==='on',reason:inputs.get('reason')});
+      if(kind==='asset-create')Object.assign(payload,{asset_no:inputs.get('asset_no'),location:inputs.get('location')});
+    } else if (kind === 'asset-action') {
+      const action=inputs.get('action');
+      Object.assign(payload,{action,reason:inputs.get('reason')});
+      if(action!=='RETIRE')payload.location=inputs.get('location');
+      if(action==='ISSUE')payload.person_id=inputs.get('person_id');
+      if(['ISSUE','RETURN'].includes(action) && inputs.get('service_request_id')){
+        const option=form.querySelector('[name="service_request_id"]').selectedOptions[0];
+        payload.service_request_id=option.value;payload.expected_request_version=Number(option.dataset.version);
+      }
+    } else if (kind === 'request-asset-issue') {
+      const option=form.querySelector('[name="asset_id"]').selectedOptions[0];
+      form.dataset.url='/api/v1/assets/'+option.value+'/actions';
+      Object.assign(payload,{action:'ISSUE',person_id:form.dataset.recipient,location:inputs.get('location'),
+        reason:inputs.get('reason'),expected_version:Number(option.dataset.version),
+        service_request_id:form.dataset.requestId,expected_request_version:Number(form.dataset.requestVersion)});
     }
     if ((kind === 'attach' || kind === 'create') && inputs.get('resource')) {
       const [resource_type, resource_id] = inputs.get('resource').split(':');
@@ -82,6 +101,7 @@ document.querySelectorAll('.api-form').forEach(form => {
       }
       if (kind === 'create') location.assign('/portal/incidents/' + result.id);
       else if (kind === 'request-create') location.assign('/portal/requests/' + result.id);
+      else if (kind === 'asset-create') location.assign('/assets/' + result.id);
       else location.reload();
     } catch (err) {
       error.textContent = err.message || '연결을 확인하고 다시 시도하십시오.';
@@ -111,3 +131,23 @@ if(fieldButton){
     document.querySelector('#catalog-publish-form [name="expected_version"]').value=versions[code.value.trim().toUpperCase()]||0;
   });
 }
+
+document.querySelectorAll('.asset-action-form').forEach(form=>{
+  const action=form.querySelector('[name="action"]');
+  const person=form.querySelector('[name="person_id"]');
+  const location=form.querySelector('[name="location"]');
+  const request=form.querySelector('[name="service_request_id"]');
+  function update(){
+    const selected=action.value;
+    form.querySelector('[data-asset-recipient]').hidden=selected!=='ISSUE';
+    form.querySelector('[data-asset-location]').hidden=!['ISSUE','RETURN','MOVE','VERIFY'].includes(selected);
+    form.querySelector('[data-asset-request]').hidden=!['ISSUE','RETURN'].includes(selected);
+    person.required=selected==='ISSUE';location.required=['ISSUE','RETURN','MOVE','VERIFY'].includes(selected);
+  }
+  action.addEventListener('change',update);
+  request.addEventListener('change',()=>{
+    const option=request.selectedOptions[0];
+    if(action.value==='ISSUE' && option.dataset.person)person.value=option.dataset.person;
+  });
+  update();
+});

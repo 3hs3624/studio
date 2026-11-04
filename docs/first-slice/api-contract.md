@@ -74,3 +74,7 @@ Idempotency-Key: demo-resolve-001
 ## 서비스 요청 확장
 
 서비스 카탈로그·요청·승인 API는 [추가 명세](../service-requests.md)를 따릅니다. 기존 장애 API는 INCIDENT만 다루며 SERVICE_REQUEST를 조회·변경하지 않습니다. 알림 응답에는 kind,label,ticket_url을 추가했고 기존 SLA 필드는 유지합니다.
+
+## 자산 수명주기 확장
+
+자산 등록·수정·상태 처리·지급/반납 이력·본인 자산 조회 API와 역할·버전 규칙은 [자산 추가 명세](../assets.md)를 따릅니다. 기존 Asset 조회 경로는 유지하며 상태·버전을 추가하고 민감 필드를 권한별로 제한합니다.

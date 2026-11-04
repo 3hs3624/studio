@@ -13,7 +13,7 @@
 <a href="/notifications">알림함 {% if unread_notifications %}<span>{{ unread_notifications }}</span>{% endif %}</a>
 {% if is_service_manager %}<a href="/work/sla">SLA · 업무 달력</a>{% endif %}
 {% if is_service_manager %}<a href="/work/catalog">카탈로그 관리</a>{% endif %}
-<a href="/assets">IT 자산</a><a href="/cis">구성항목 · CI</a>
+<a href="/my-assets">내 지급 자산</a><a href="/assets">IT 자산</a><a href="/cis">구성항목 · CI</a>
 {% if is_admin %}<a href="/admin/access">조직 · 권한 관리</a>{% endif %}</nav>
 <div class="sidebar-bottom"><span class="live-dot"></span> 서비스 운영 워크스페이스<br><small>Studio / IT 운영</small></div></aside>
 <div class="shell"><header class="topbar"><span>{{ org.name|default:'Studio workspace' }}</span><div class="account">{% if user.is_authenticated %}<span class="avatar">{{ actor.display_name|first }}</span>{{ actor.display_name }}<form action="/logout/" method="post">{% csrf_token %}<button class="link-button">로그아웃</button></form>{% endif %}</div></header>

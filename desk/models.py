@@ -3,7 +3,8 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
-ROLES = ['SERVICE_MANAGER', 'AGENT', 'ORG_ADMIN', 'RESOURCE_READER']
+ROLES = ['SERVICE_MANAGER', 'AGENT', 'ORG_ADMIN', 'RESOURCE_READER', 'ASSET_MANAGER']
+ASSET_STATUSES = ['UNVERIFIED','STOCK','IN_USE','RETIRED']
 STATUSES = ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED']
 REQUEST_STATUSES = ['PENDING_APPROVAL','APPROVED','IN_PROGRESS','FULFILLED','CLOSED','REJECTED','CANCELLED']
 
@@ -56,8 +57,18 @@ class Asset(Base):
     model = models.CharField(max_length=200, blank=True)
     location = models.CharField(max_length=200, blank=True)
     portal_visible = models.BooleanField(default=False)
+    manufacturer = models.CharField(max_length=200, blank=True)
+    serial_number = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=20, default='UNVERIFIED')
+    custodian = models.ForeignKey(Person, null=True, on_delete=models.PROTECT, related_name='held_assets')
+    row_version = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['organization', 'asset_no'], name='asset_org_number')]
+        constraints = [models.UniqueConstraint(fields=['organization', 'asset_no'], name='asset_org_number'),
+            models.UniqueConstraint(fields=['organization','manufacturer','serial_number'],condition=~Q(serial_number=''),name='asset_serial_unique'),
+            models.CheckConstraint(condition=Q(status__in=ASSET_STATUSES),name='asset_status'),
+            models.CheckConstraint(condition=(Q(status='IN_USE',custodian__isnull=False)|(~Q(status='IN_USE')&Q(custodian__isnull=True))),name='asset_custodian_state')]
+        indexes = [models.Index(fields=['organization','status','-created_at']),models.Index(fields=['organization','custodian'])]
 
 class ConfigurationItem(Base):
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
@@ -293,3 +304,34 @@ class ApprovalDecision(Base):
     reason = models.TextField(blank=True)
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(decision__in=['APPROVE','REJECT']),name='approval_decision_value')]
+
+class AssetCustody(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='custodies')
+    person = models.ForeignKey(Person, on_delete=models.PROTECT)
+    issued_by = models.ForeignKey(Person, on_delete=models.PROTECT, related_name='issued_custodies')
+    issue_request = models.ForeignKey(Ticket, null=True, on_delete=models.PROTECT)
+    issue_location = models.CharField(max_length=200)
+    issue_reason = models.TextField()
+    returned_at = models.DateTimeField(null=True)
+    returned_by = models.ForeignKey(Person, null=True, on_delete=models.PROTECT, related_name='returned_custodies')
+    return_location = models.CharField(max_length=200, blank=True)
+    return_reason = models.TextField(blank=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['asset'],condition=Q(returned_at__isnull=True),name='asset_single_active_custody'),
+            models.CheckConstraint(condition=(Q(returned_at__isnull=True,returned_by__isnull=True)|Q(returned_at__isnull=False,returned_by__isnull=False)),name='asset_return_fields')]
+        indexes = [models.Index(fields=['organization','person','-created_at'])]
+
+class AssetHistory(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='history')
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    custody = models.ForeignKey(AssetCustody, null=True, on_delete=models.PROTECT)
+    request = models.ForeignKey(Ticket, null=True, on_delete=models.PROTECT)
+    kind = models.CharField(max_length=20)
+    reason = models.TextField()
+    before_data = models.JSONField(default=dict)
+    after_data = models.JSONField()
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(kind__in=['REGISTER','UPDATE','VERIFY','ISSUE','RETURN','MOVE','RETIRE']),name='asset_history_kind')]
+        indexes = [models.Index(fields=['asset','-created_at','-id'])]
