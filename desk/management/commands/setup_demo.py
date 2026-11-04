@@ -19,8 +19,10 @@ class Command(BaseCommand):
         org=Organization.objects.create(name='Studio 데모 조직')
         group=Group.objects.create(organization=org,name='IT 서비스 데스크',triage=True)
         configurations=[('employee','김요청',[]),('agent','박담당',['AGENT','RESOURCE_READER']),
-                        ('manager','이서비스',['SERVICE_MANAGER','AGENT','RESOURCE_READER','ASSET_MANAGER']),
+                        ('manager','이서비스',['SERVICE_MANAGER','AGENT','RESOURCE_READER','ASSET_MANAGER','STOCK_MANAGER']),
                         ('assetadmin','최자산',['ASSET_MANAGER','RESOURCE_READER']),
+                        ('buyer','구매담당',['PROCUREMENT_MANAGER']),
+                        ('stockadmin','재고담당',['STOCK_MANAGER','ASSET_MANAGER','RESOURCE_READER']),
                         ('orgadmin','정관리',['ORG_ADMIN'])]
         for username,name,roles in configurations:
             user=get_user_model().objects.create_user(username=username,password=password)
@@ -48,4 +50,15 @@ class Command(BaseCommand):
             'fields':[{'key':'reason','label':'신청 사유','type':'textarea','required':True},
                       {'key':'device','label':'장비 유형','type':'choice','required':True,'options':['일반 업무용','개발 업무용']}]},
             'setup-demo-catalog',uuid.uuid4())
-        self.stdout.write(self.style.SUCCESS('Created local accounts: employee, agent, manager, assetadmin, orgadmin. Use your chosen password.'))
+        buyer=Person.objects.get(organization=org,user__username='buyer')
+        stock=Person.objects.get(organization=org,user__username='stockadmin')
+        for code,name,location in [('MAIN','IT 중앙 창고','서울 본사 창고'),('REMOTE','서울 예비 창고','서울 분산 창고')]:
+            execute(stock,'stock_room',{'code':code,'name':name,'location':location},'setup-room-'+code,uuid.uuid4())
+        for code,name,tracking,manufacturer,model in [('CABLE','USB 케이블','BULK','',''),('NOTEBOOK','재고 노트북','SERIALIZED','Demo','Notebook 14')]:
+            execute(stock,'stock_item',{'code':code,'name':name,'tracking':tracking,'manufacturer':manufacturer,'model':model},'setup-item-'+code,uuid.uuid4())
+        supplier,_=execute(buyer,'buy_supplier',{'code':'DEMO-SUPPLIER','name':'데모 공급업체','contact':''},'setup-supplier',uuid.uuid4())
+        from django.utils import timezone
+        year=timezone.localdate().year
+        execute(buyer,'buy_contract',{'code':'DEMO-CONTRACT','name':'데모 장비 구매 계약','supplier_id':supplier['id'],
+            'starts_on':f'{year}-01-01','ends_on':f'{year+1}-12-31','currency':'KRW','amount':'100000000','notes':'합성 데이터'},'setup-contract',uuid.uuid4())
+        self.stdout.write(self.style.SUCCESS('Created local accounts: employee, agent, manager, assetadmin, buyer, stockadmin, orgadmin. Use your chosen password.'))

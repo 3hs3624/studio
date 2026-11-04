@@ -13,6 +13,9 @@
 <a href="/notifications">알림함 {% if unread_notifications %}<span>{{ unread_notifications }}</span>{% endif %}</a>
 {% if is_service_manager %}<a href="/work/sla">SLA · 업무 달력</a>{% endif %}
 {% if is_service_manager %}<a href="/work/catalog">카탈로그 관리</a>{% endif %}
+{% if can_purchase_request %}<a href="/procurement/requisitions">구매 요청 · 승인</a>{% endif %}
+{% if can_stock_read %}<a href="/procurement/orders">발주 · 입고</a><a href="/inventory">창고 · 재고</a>{% endif %}
+{% if can_contract_read %}<a href="/contracts">공급업체 · 계약</a>{% endif %}
 <a href="/my-assets">내 지급 자산</a><a href="/assets">IT 자산</a><a href="/cis">구성항목 · CI</a>
 {% if is_admin %}<a href="/admin/access">조직 · 권한 관리</a>{% endif %}</nav>
 <div class="sidebar-bottom"><span class="live-dot"></span> 서비스 운영 워크스페이스<br><small>Studio / IT 운영</small></div></aside>

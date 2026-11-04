@@ -26,6 +26,10 @@ def context(request):
     return {'actor':p,'roles':s.roles(p),'org':p.organization,'can_work':bool(s.group_ids(p)) or s.manager(p),
             'is_admin':'ORG_ADMIN' in s.roles(p),'is_service_manager':s.manager(p),
             'is_asset_manager':'ASSET_MANAGER' in s.roles(p),
+            'is_buyer':'PROCUREMENT_MANAGER' in s.roles(p),'is_stock_manager':'STOCK_MANAGER' in s.roles(p),
+            'can_purchase_request':bool(s.roles(p)&{'PROCUREMENT_MANAGER','SERVICE_MANAGER'}),
+            'can_stock_read':bool(s.roles(p)&{'PROCUREMENT_MANAGER','STOCK_MANAGER'}),
+            'can_contract_read':bool(s.roles(p)&{'PROCUREMENT_MANAGER','ASSET_MANAGER'}),
             'pending_approvals':RequestApproval.objects.filter(organization=p.organization,approver=p,status='PENDING',ticket__status='PENDING_APPROVAL').count(),
             'unread_notifications':visible_notifications(p).filter(read_at__isnull=True).count()}
 
@@ -225,6 +229,7 @@ def request_detail(request,id):
         c['can_issue_asset']=asset_manager(p) and catalog.request_staff(p,t) and t.status=='IN_PROGRESS'
         if c['can_issue_asset']:
             c['stock_assets']=asset_query(p).filter(status='STOCK')
+            if 'STOCK_MANAGER' not in s.roles(p): c['stock_assets']=c['stock_assets'].filter(stock_record__isnull=True)
         return render(request,'desk/request-detail.html',c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message,status=exc.status)

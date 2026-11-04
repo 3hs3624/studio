@@ -1,6 +1,6 @@
 from django.urls import path
 from django.contrib.auth.views import LogoutView
-from desk import api, views, asset_views
+from desk import api, views, asset_views, inventory_api, purchasing_views
 
 handler404 = 'desk.api.not_found'
 handler500 = 'desk.api.server_error'
@@ -39,4 +39,21 @@ urlpatterns = [
     path('api/v1/requests/<uuid:id>',api.service_request),path('api/v1/requests/<uuid:id>/assign',api.request_assignment),
     path('api/v1/requests/<uuid:id>/actions',api.request_action),path('api/v1/requests/<uuid:id>/decision',api.request_decision),
     path('api/v1/requests/<uuid:id>/comments',api.request_comments),path('api/v1/approvals',api.approvals),
+    path('api/v1/procurement/suppliers',inventory_api.master,{'kind':'suppliers'}),
+    path('api/v1/procurement/contracts',inventory_api.master,{'kind':'contracts'}),
+    path('api/v1/inventory/stockrooms',inventory_api.master,{'kind':'stockrooms'}),
+    path('api/v1/inventory/items',inventory_api.master,{'kind':'items'}),
+    path('api/v1/procurement/requisitions',inventory_api.requisitions),
+    path('api/v1/procurement/requisitions/<uuid:id>',inventory_api.requisition),
+    path('api/v1/procurement/requisitions/<uuid:id>/decision',inventory_api.decide),
+    path('api/v1/procurement/requisitions/<uuid:id>/cancel',inventory_api.cancel_request),
+    path('api/v1/procurement/orders',inventory_api.orders),path('api/v1/procurement/orders/<uuid:id>',inventory_api.order),
+    path('api/v1/procurement/orders/<uuid:id>/actions',inventory_api.order_actions),
+    path('api/v1/procurement/orders/<uuid:id>/receipts',inventory_api.receipts),
+    path('api/v1/procurement/asset-contracts',inventory_api.asset_contracts),
+    path('api/v1/inventory/balances',inventory_api.balances),path('api/v1/inventory/movements',inventory_api.movements),
+    path('api/v1/inventory/transfer',inventory_api.transfer),path('api/v1/inventory/issue',inventory_api.issue),
+    path('procurement/requisitions',purchasing_views.requisitions),path('procurement/requisitions/<uuid:id>',purchasing_views.requisition),
+    path('procurement/orders',purchasing_views.orders),path('procurement/orders/<uuid:id>',purchasing_views.order),
+    path('inventory',purchasing_views.inventory),path('inventory/movements',purchasing_views.movements),path('contracts',purchasing_views.contracts),
 ]

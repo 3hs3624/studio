@@ -28,4 +28,15 @@ def asset_label(value):
 @register.filter
 def role_label(value):
     return {'SERVICE_MANAGER':'서비스 관리자','AGENT':'처리 담당자','ORG_ADMIN':'조직 관리자',
-            'RESOURCE_READER':'자산·구성 조회','ASSET_MANAGER':'자산 관리자'}.get(value,value)
+            'RESOURCE_READER':'자산·구성 조회','ASSET_MANAGER':'자산 관리자','PROCUREMENT_MANAGER':'구매 관리자','STOCK_MANAGER':'재고 관리자'}.get(value,value)
+
+@register.filter
+def purchase_label(value):
+    return {'PENDING':'승인 대기','APPROVED':'승인 완료','REJECTED':'반려','ORDERED':'발주 확정',
+        'CANCELLED':'취소','DRAFT':'초안','PART_RECEIVED':'부분 입고','RECEIVED':'입고 완료'}.get(value,value)
+
+@register.filter
+def tracking_label(value): return {'BULK':'수량 품목','SERIALIZED':'일련번호 장비'}.get(value,value)
+
+@register.filter
+def movement_label(value): return {'RECEIPT':'입고','ISSUE':'출고·지급','RETURN':'반납 입고','TRANSFER':'창고 이동','RETIRE':'폐기 출고'}.get(value,value)

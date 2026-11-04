@@ -15,7 +15,7 @@ def require_manager(p):
         s.fail('FORBIDDEN','자산 관리자 권한이 필요합니다.',403)
 
 def query(p):
-    qs=Asset.objects.filter(organization=p.organization).select_related('custodian')
+    qs=Asset.objects.filter(organization=p.organization).select_related('custodian','stock_record')
     return qs if full_reader(p) else qs.filter(Q(portal_visible=True)|Q(custodian=p))
 
 def get_asset(p,ident,lock=False):
@@ -41,6 +41,15 @@ def data(a,p=None):
             custodian=s.person_data(a.custodian) if a.custodian else None)
     if p and manager(p):
         result.update(portal_visible=a.portal_visible,allowed_actions=actions(a),can_update=a.status!='RETIRED')
+        from .models import StockAsset
+        try: row=a.stock_record
+        except StockAsset.DoesNotExist: row=None
+        if row:
+            result['warehouse_managed']=True
+            if 'STOCK_MANAGER' not in s.roles(p):
+                result['allowed_actions']=[x for x in result['allowed_actions'] if x not in ['ISSUE','RETURN','RETIRE']]
+            if row.stockroom_id:
+                result['allowed_actions']=[x for x in result['allowed_actions'] if x!='MOVE']
     return result
 
 def snapshot(a):
@@ -74,7 +83,8 @@ def authorize(p,op,target):
 
 def replay(p,op,payload,result):
     a=get_asset(p,s.identifier(result['id']))
-    result.update(allowed_actions=actions(a),can_update=a.status!='RETIRED')
+    current=data(a,p)
+    result.update(allowed_actions=current.get('allowed_actions',[]),can_update=a.status!='RETIRED')
     if payload.get('service_request_id'):
         from .catalog import get_request
         get_request(p,s.identifier(payload['service_request_id']))
@@ -139,7 +149,7 @@ def mutate(p,op,payload,request_id,target):
         log(p,a,'UPDATE',s.text(payload,'reason'),request_id,before)
         return data(a,p),200
 
-    s.check_fields(payload,['action','person_id','location','reason','expected_version','service_request_id','expected_request_version'],
+    s.check_fields(payload,['action','person_id','location','reason','expected_version','service_request_id','expected_request_version','stockroom_id'],
                    ['action','reason','expected_version'])
     s.version(a,payload)
     action=payload['action']
@@ -148,7 +158,7 @@ def mutate(p,op,payload,request_id,target):
     if action not in actions(a):
         s.fail('INVALID_STATE','현재 자산 상태에서 실행할 수 없습니다.',409)
     extra={'ISSUE':['person_id','location','service_request_id','expected_request_version'],
-           'RETURN':['location','service_request_id','expected_request_version'],
+           'RETURN':['location','service_request_id','expected_request_version','stockroom_id'],
            'MOVE':['location'],'VERIFY':['location'],'RETIRE':[]}[action]
     s.check_fields(payload,['action','reason','expected_version']+extra)
     if payload.get('service_request_id') is not None:
@@ -185,7 +195,7 @@ def mutate(p,op,payload,request_id,target):
         if moment<custody.created_at:
             s.fail('INVALID_CUSTODY_TIME','반납 시각은 지급 시각보다 이전일 수 없습니다.',409)
         custody.returned_at=moment;custody.returned_by=p
-        custody.return_location=a.location;custody.return_reason=reason;custody.save()
+        custody.return_location=a.location;custody.return_reason=reason
         a.status='STOCK';a.custodian=None
     elif action in ('MOVE','VERIFY'):
         if payload.get('person_id') or payload.get('service_request_id'):
@@ -197,6 +207,11 @@ def mutate(p,op,payload,request_id,target):
         if payload.get('person_id') or payload.get('service_request_id'):
             s.fail('INVALID_INPUT','이 동작에는 수령자·서비스 요청을 지정할 수 없습니다.')
         a.status='RETIRED'
+    from .procurement import synchronize_asset
+    synchronize_asset(p,a,action,payload,ticket)
+    if action=='RETURN':
+        custody.return_location=a.location
+        custody.save()
     s.bump(a)
     if payload.get('service_request_id'):
         TicketResource.objects.get_or_create(organization=p.organization,ticket=ticket,asset=a)

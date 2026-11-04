@@ -175,7 +175,10 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
-    if operation.startswith('asset_'):
+    if operation.startswith(('buy_','stock_')):
+        from .procurement import authorize
+        authorize(p,operation,target)
+    elif operation.startswith('asset_'):
         from .assets import authorize
         authorize(p,operation,target)
     elif operation=='catalog_publish' or operation.startswith('req_'):
@@ -222,6 +225,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
                 if not permitted:
                     fail('FORBIDDEN','현재 상태 변경 권한이 없습니다.',403)
             result = dict(previous.response_body)
+            if operation.startswith(('buy_','stock_')):
+                from .procurement import replay
+                result=replay(p,operation,data,result)
             if operation.startswith('asset_'):
                 from .assets import replay
                 result=replay(p,operation,data,result)
@@ -248,6 +254,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op.startswith(('buy_','stock_')):
+        from .procurement import mutate as mutate_procurement
+        return mutate_procurement(p,op,data,request_id,target)
     if op.startswith('asset_'):
         from .assets import mutate as mutate_asset
         return mutate_asset(p,op,data,request_id,target)

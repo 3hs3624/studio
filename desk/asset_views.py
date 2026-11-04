@@ -47,6 +47,12 @@ def detail(request,id):
         if assets.manager(p):
             c.update(people=Person.objects.filter(organization=p.organization,active=True,user__is_active=True).order_by('display_name'),
                      requests=candidates(p))
+        from .models import StockAsset,Stockroom,AssetContractLink
+        row=StockAsset.objects.filter(asset=a).select_related('stockroom','item').first()
+        if row and assets.full_reader(p):
+            c.update(stock_record=row,stockrooms=Stockroom.objects.filter(organization=p.organization))
+        if assets.full_reader(p):
+            c['contract_links']=AssetContractLink.objects.filter(asset=a).select_related('contract__supplier')
         return render(request,'desk/asset-detail.html',c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message,status=exc.status)

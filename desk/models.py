@@ -3,7 +3,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
-ROLES = ['SERVICE_MANAGER', 'AGENT', 'ORG_ADMIN', 'RESOURCE_READER', 'ASSET_MANAGER']
+ROLES = ['SERVICE_MANAGER', 'AGENT', 'ORG_ADMIN', 'RESOURCE_READER', 'ASSET_MANAGER', 'PROCUREMENT_MANAGER', 'STOCK_MANAGER']
 ASSET_STATUSES = ['UNVERIFIED','STOCK','IN_USE','RETIRED']
 STATUSES = ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED']
 REQUEST_STATUSES = ['PENDING_APPROVAL','APPROVED','IN_PROGRESS','FULFILLED','CLOSED','REJECTED','CANCELLED']
@@ -335,3 +335,150 @@ class AssetHistory(Base):
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(kind__in=['REGISTER','UPDATE','VERIFY','ISSUE','RETURN','MOVE','RETIRE']),name='asset_history_kind')]
         indexes = [models.Index(fields=['asset','-created_at','-id'])]
+
+class Supplier(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    code = models.CharField(max_length=80)
+    name = models.CharField(max_length=200)
+    contact = models.CharField(max_length=200, blank=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','code'],name='supplier_code')]
+
+class Contract(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT)
+    code = models.CharField(max_length=80)
+    name = models.CharField(max_length=200)
+    starts_on = models.DateField()
+    ends_on = models.DateField()
+    currency = models.CharField(max_length=3)
+    amount = models.DecimalField(max_digits=16, decimal_places=2)
+    notes = models.TextField(blank=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','code'],name='contract_code'),
+            models.CheckConstraint(condition=Q(ends_on__gte=models.F('starts_on')),name='contract_dates'),
+            models.CheckConstraint(condition=Q(amount__gt=0),name='contract_amount')]
+
+class Stockroom(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    code = models.CharField(max_length=80)
+    name = models.CharField(max_length=200)
+    location = models.CharField(max_length=200)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','code'],name='stockroom_code')]
+
+class StockItem(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    code = models.CharField(max_length=80)
+    name = models.CharField(max_length=200)
+    tracking = models.CharField(max_length=12)
+    manufacturer = models.CharField(max_length=200, blank=True)
+    model = models.CharField(max_length=200, blank=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','code'],name='stock_item_code'),
+            models.CheckConstraint(condition=Q(tracking__in=['BULK','SERIALIZED']),name='stock_tracking')]
+
+class StockBalance(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    stockroom = models.ForeignKey(Stockroom, on_delete=models.PROTECT)
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT)
+    quantity = models.PositiveBigIntegerField(default=0)
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['stockroom','item'],name='stock_balance_pair')]
+
+class PurchaseRequisition(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT)
+    quantity = models.PositiveIntegerField()
+    currency = models.CharField(max_length=3)
+    max_unit_price = models.DecimalField(max_digits=16, decimal_places=2)
+    requester = models.ForeignKey(Person, on_delete=models.PROTECT, related_name='purchase_requests')
+    approver = models.ForeignKey(Person, on_delete=models.PROTECT, related_name='purchase_approvals')
+    source_request = models.ForeignKey(Ticket, null=True, on_delete=models.PROTECT)
+    reason = models.TextField()
+    status = models.CharField(max_length=15, default='PENDING')
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(quantity__gt=0,max_unit_price__gt=0),name='purchase_request_positive'),
+            models.CheckConstraint(condition=~Q(requester=models.F('approver')),name='purchase_no_self_approval'),
+            models.CheckConstraint(condition=Q(status__in=['PENDING','APPROVED','REJECTED','ORDERED','CANCELLED']),name='purchase_request_status')]
+
+class PurchaseDecision(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    requisition = models.OneToOneField(PurchaseRequisition, on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    decision = models.CharField(max_length=10)
+    reason = models.TextField(blank=True)
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(decision__in=['APPROVE','REJECT']),name='purchase_decision_value')]
+
+class PurchaseOrder(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    requisition = models.ForeignKey(PurchaseRequisition, on_delete=models.PROTECT)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT)
+    contract = models.ForeignKey(Contract, null=True, on_delete=models.PROTECT)
+    number = models.CharField(max_length=40, unique=True)
+    currency = models.CharField(max_length=3)
+    quantity = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=16, decimal_places=2)
+    total = models.DecimalField(max_digits=16, decimal_places=2)
+    received_quantity = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=16, default='DRAFT')
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['requisition'],condition=~Q(status='CANCELLED'),name='one_active_order'),
+            models.CheckConstraint(condition=Q(quantity__gt=0,unit_price__gt=0,total__gt=0),name='purchase_order_positive'),
+            models.CheckConstraint(condition=Q(received_quantity__lte=models.F('quantity')),name='purchase_no_overreceipt'),
+            models.CheckConstraint(condition=Q(status__in=['DRAFT','ORDERED','PART_RECEIVED','RECEIVED','CANCELLED']),name='purchase_order_status')]
+
+class GoodsReceipt(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT)
+    stockroom = models.ForeignKey(Stockroom, on_delete=models.PROTECT)
+    reference = models.CharField(max_length=80)
+    quantity = models.PositiveIntegerField()
+    received_by = models.ForeignKey(Person, on_delete=models.PROTECT)
+    serials = models.JSONField(default=list)
+    reason = models.TextField()
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['order','reference'],name='receipt_reference_unique'),
+            models.CheckConstraint(condition=Q(quantity__gt=0),name='receipt_quantity_positive')]
+
+class StockAsset(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    asset = models.OneToOneField(Asset, on_delete=models.PROTECT, related_name='stock_record')
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT)
+    stockroom = models.ForeignKey(Stockroom, null=True, on_delete=models.PROTECT)
+    receipt = models.ForeignKey(GoodsReceipt, on_delete=models.PROTECT)
+
+class StockMovement(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT)
+    source = models.ForeignKey(Stockroom, null=True, on_delete=models.PROTECT, related_name='outgoing_stock')
+    target = models.ForeignKey(Stockroom, null=True, on_delete=models.PROTECT, related_name='incoming_stock')
+    quantity = models.PositiveIntegerField()
+    kind = models.CharField(max_length=10)
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    recipient = models.ForeignKey(Person, null=True, on_delete=models.PROTECT, related_name='stock_issues')
+    request = models.ForeignKey(Ticket, null=True, on_delete=models.PROTECT)
+    receipt = models.ForeignKey(GoodsReceipt, null=True, on_delete=models.PROTECT)
+    asset = models.ForeignKey(Asset, null=True, on_delete=models.PROTECT)
+    asset_ids = models.JSONField(default=list)
+    destination = models.CharField(max_length=200, blank=True)
+    reason = models.TextField()
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(quantity__gt=0),name='stock_move_positive'),
+            models.CheckConstraint(condition=(Q(kind__in=['RECEIPT','RETURN'],source__isnull=True,target__isnull=False)|
+                Q(kind__in=['ISSUE','RETIRE'],source__isnull=False,target__isnull=True)|
+                Q(kind='TRANSFER',source__isnull=False,target__isnull=False)&~Q(source=models.F('target'))),name='stock_move_direction')]
+        indexes = [models.Index(fields=['organization','item','-created_at'])]
+
+class AssetContractLink(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT)
+    contract = models.ForeignKey(Contract, on_delete=models.PROTECT)
+    reason = models.TextField()
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['asset','contract'],name='asset_contract_unique')]
