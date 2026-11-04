@@ -5,10 +5,14 @@
 <body><a class="skip" href="#main">본문으로 이동</a>
 <aside class="sidebar"><a class="brand" href="/portal/incidents"><span class="logo">S</span> studio<span class="brand-dot">.</span></a>
 <p class="nav-label">WORKSPACE</p><nav aria-label="주 메뉴">
+<a href="/catalog">서비스 카탈로그</a><a href="/portal/requests">내 서비스 요청</a>
+<a href="/approvals">승인함 {% if pending_approvals %}<span>{{ pending_approvals }}</span>{% endif %}</a>
 <a href="/portal/incidents">내 장애 요청 <span>↗</span></a>
 {% if can_work %}<a href="/work/incidents">서비스 데스크 <span>↗</span></a>{% endif %}
+{% if can_work %}<a href="/work/requests">서비스 요청 처리</a>{% endif %}
 <a href="/notifications">알림함 {% if unread_notifications %}<span>{{ unread_notifications }}</span>{% endif %}</a>
 {% if is_service_manager %}<a href="/work/sla">SLA · 업무 달력</a>{% endif %}
+{% if is_service_manager %}<a href="/work/catalog">카탈로그 관리</a>{% endif %}
 <a href="/assets">IT 자산</a><a href="/cis">구성항목 · CI</a>
 {% if is_admin %}<a href="/admin/access">조직 · 권한 관리</a>{% endif %}</nav>
 <div class="sidebar-bottom"><span class="live-dot"></span> 서비스 운영 워크스페이스<br><small>Studio / IT 운영</small></div></aside>

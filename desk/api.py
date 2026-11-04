@@ -74,6 +74,8 @@ def command(request,operation,target=None,subtarget=None):
     response=HttpResponse(status=204) if status==204 else JsonResponse(result,status=status)
     if operation=='create':
         response['Location']='/api/v1/incidents/'+result['id']
+    if operation=='req_create':
+        response['Location']='/api/v1/requests/'+result['id']
     return response
 
 def parse_version(raw):
@@ -236,3 +238,81 @@ def notifications(request):
 @endpoint(['POST'])
 def notification_read(request,id):
     return command(request,'notification_read',id)
+
+@endpoint(['GET'])
+def catalog_items(request,id=None):
+    from . import catalog
+    if id:
+        return catalog.catalog_data(catalog.offering(request.actor,id))
+    params=query(request,['limit','cursor','q'])
+    qs=catalog.latest_versions(request.actor)
+    if params.get('q'):
+        if len(params['q'])>200:
+            s.fail('INVALID_QUERY','검색어는 최대 200자입니다.',400)
+        qs=qs.filter(name__icontains=params['q'])
+    return s.page(request.actor,qs,params,catalog.catalog_data,'catalog_items')
+
+@endpoint(['GET','POST'])
+def catalog_versions(request):
+    from . import catalog
+    from .models import CatalogVersion
+    catalog.require_manager(request.actor)
+    if request.method=='POST':
+        return command(request,'catalog_publish')
+    params=query(request,['limit','cursor'])
+    qs=CatalogVersion.objects.filter(organization=request.actor.organization).select_related('item')
+    return s.page(request.actor,qs,params,lambda v:catalog.catalog_data(v,True),'catalog_versions')
+
+@endpoint(['GET','POST'])
+def service_requests(request):
+    from . import catalog
+    from .models import REQUEST_STATUSES
+    if request.method=='POST':
+        return command(request,'req_create')
+    params=query(request,['scope','status','limit','cursor'])
+    scope=params.get('scope','mine')
+    if scope not in ('mine','queue'):
+        s.fail('INVALID_SCOPE','scope는 mine 또는 queue입니다.',400)
+    qs=catalog.request_query(request.actor,scope)
+    if params.get('status'):
+        if params['status'] not in REQUEST_STATUSES:
+            s.fail('INVALID_STATUS','요청 상태를 확인하십시오.',400)
+        qs=qs.filter(status=params['status'])
+    return s.page(request.actor,qs,params,lambda t:catalog.request_data(request.actor,t,False),'service_requests')
+
+@endpoint(['GET'])
+def service_request(request,id):
+    from . import catalog
+    return catalog.request_data(request.actor,catalog.get_request(request.actor,id))
+
+@endpoint(['POST'])
+def request_assignment(request,id):
+    return command(request,'req_assign',id)
+
+@endpoint(['POST'])
+def request_action(request,id):
+    return command(request,'req_action',id)
+
+@endpoint(['POST'])
+def request_decision(request,id):
+    return command(request,'req_decision',id)
+
+@endpoint(['GET','POST'])
+def request_comments(request,id):
+    from . import catalog
+    if request.method=='POST':
+        return command(request,'req_comment',id)
+    t=catalog.get_request(request.actor,id)
+    params=query(request,['limit','cursor'])
+    qs=Comment.objects.filter(ticket=t).select_related('author')
+    if not catalog.request_staff(request.actor,t):
+        qs=qs.filter(visibility='PUBLIC')
+    return s.page(request.actor,qs,params,s.comment_data,'request_comments:'+str(id))
+
+@endpoint(['GET'])
+def approvals(request):
+    from . import catalog
+    params=query(request,['limit','cursor'])
+    qs=catalog.request_query(request.actor).filter(request_approval__approver=request.actor,
+                      request_approval__status='PENDING',status='PENDING_APPROVAL')
+    return s.page(request.actor,qs,params,lambda t:catalog.request_data(request.actor,t,False),'approvals')

@@ -44,7 +44,7 @@ def staff(p, t):
     return manager(p) or (t.status != 'NEW' and t.group_id in group_ids(p))
 
 def ticket_query(p, queue=False):
-    q = Ticket.objects.filter(organization=p.organization).select_related('incident','requested_by','group','assignee','sla_instance')
+    q = Ticket.objects.filter(organization=p.organization,type='INCIDENT').select_related('incident','requested_by','group','assignee','sla_instance')
     if manager(p):
         return q if queue else q.filter(requested_by=p)
     permitted = Q(group_id__in=group_ids(p)) & ~Q(status='NEW')
@@ -53,7 +53,7 @@ def ticket_query(p, queue=False):
     return q.filter(requested_by=p)
 
 def get_ticket(p, ident, lock=False):
-    q = Ticket.objects.filter(organization=p.organization)
+    q = Ticket.objects.filter(organization=p.organization,type='INCIDENT')
     if lock:
         q = q.select_for_update()
     t = q.filter(id=ident).first()
@@ -143,11 +143,12 @@ def comment_data(c):
             'author':person_data(c.author),'created_at':c.created_at.isoformat()}
 
 def record(p, obj, action, request_id, before=None, after=None):
-    AuditEvent.objects.create(organization=p.organization,actor=p,action=action,
+    event = AuditEvent.objects.create(organization=p.organization,actor=p,action=action,
                              entity_type=obj.__class__.__name__,entity_id=obj.id,
                              before_data=before or {},after_data=after or {},request_id=request_id)
     OutboxEvent.objects.create(organization=p.organization,event_type=action,entity_id=obj.id,
                                payload={'request_id':str(request_id)})
+    return event
 
 def history(p, t, old, reason=''):
     StatusHistory.objects.create(organization=p.organization,ticket=t,actor=p,
@@ -168,7 +169,10 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
-    if operation in ('sla_calendar','sla_policy'):
+    if operation=='catalog_publish' or operation.startswith('req_'):
+        from .catalog import authorize
+        authorize(p,operation,target)
+    elif operation in ('sla_calendar','sla_policy'):
         from .sla import require_manager
         require_manager(p)
     elif operation=='notification_read':
@@ -209,6 +213,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
                 if not permitted:
                     fail('FORBIDDEN','현재 상태 변경 권한이 없습니다.',403)
             result = dict(previous.response_body)
+            if operation=='catalog_publish' or operation.startswith('req_'):
+                from .catalog import replay
+                result=replay(p,operation,data,result,target)
             if operation in ('create','assign','transition','attach'):
                 current = get_ticket(p,identifier(result['id']))
                 if not staff(p,current):
@@ -229,6 +236,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op=='catalog_publish' or op.startswith('req_'):
+        from .catalog import mutate as mutate_request
+        return mutate_request(p,op,data,request_id,target)
     if op in ('sla_calendar','sla_policy'):
         from .sla import publish
         return publish(p,op,data,request_id)
@@ -371,7 +381,7 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
         if data['active']:
             Membership.objects.get_or_create(organization=p.organization,group=group,person=member)
         else:
-            if Ticket.objects.filter(group=group,assignee=member).exclude(status='CLOSED').exists():
+            if Ticket.objects.filter(group=group,assignee=member).exclude(status__in=['CLOSED','REJECTED','CANCELLED']).exists():
                 fail('OPEN_ASSIGNMENTS','열린 배정 건을 먼저 재배정하십시오.',409)
             Membership.objects.filter(group=group,person=member).delete()
         bump(group)
@@ -389,7 +399,7 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
                                          person__user__is_active=True).exclude(person=member)
         if member.id==p.id or not others.exists():
             fail('ADMIN_PROTECTED','자기 관리자 권한 또는 마지막 관리자는 제거할 수 없습니다.',409)
-    if 'AGENT' in old and 'AGENT' not in desired and Ticket.objects.filter(assignee=member).exclude(status='CLOSED').exists():
+    if 'AGENT' in old and 'AGENT' not in desired and Ticket.objects.filter(assignee=member).exclude(status__in=['CLOSED','REJECTED','CANCELLED']).exists():
         fail('OPEN_ASSIGNMENTS','열린 배정 건을 먼저 재배정하십시오.',409)
     RoleGrant.objects.filter(person=member).delete()
     for role in desired:
@@ -407,6 +417,7 @@ def page(p, qs, params, serialize, scope=''):
         fail('INVALID_LIMIT','limit은 1~100입니다.',400)
     fingerprint=hashlib.sha256(json.dumps({'person':str(p.id),'org':str(p.organization_id),
         'roles':sorted(roles(p)),'groups':sorted(str(x) for x in group_ids(p)),
+        'memberships':sorted(str(x) for x in Membership.objects.filter(person=p,organization=p.organization,group__active=True).values_list('group_id',flat=True)),
         'endpoint':scope, 'query':{k:v for k,v in params.items() if k not in ('cursor','limit') and v},
         'limit':limit},sort_keys=True).encode()).hexdigest()
     cursor=params.get('cursor')

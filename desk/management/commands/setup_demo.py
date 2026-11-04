@@ -35,4 +35,14 @@ class Command(BaseCommand):
         for priority,response,resolution in [(1,15,60),(2,30,240),(3,60,480),(4,120,1440),(5,240,2400)]:
             SLAPolicy.objects.create(organization=org,calendar=calendar,name=f'장애 P{priority}',priority=priority,
                     version=1,response_minutes=response,resolution_minutes=resolution)
+        from desk.services import execute
+        import uuid
+        manager=Person.objects.get(organization=org,user__username='manager')
+        execute(manager,'catalog_publish',{'code':'LAPTOP','name':'업무용 노트북 신청',
+            'description':'업무에 필요한 노트북을 신청합니다. 지정 승인자의 승인 후 IT 담당자가 처리합니다.',
+            'fulfillment_group_id':str(group.id),'approval_required':True,'approver_id':str(manager.id),
+            'public_to_org':True,'audience_group_ids':[],'available':True,'expected_version':0,
+            'fields':[{'key':'reason','label':'신청 사유','type':'textarea','required':True},
+                      {'key':'device','label':'장비 유형','type':'choice','required':True,'options':['일반 업무용','개발 업무용']}]},
+            'setup-demo-catalog',uuid.uuid4())
         self.stdout.write(self.style.SUCCESS('Created local accounts: employee, agent, manager, orgadmin. Use your chosen password.'))

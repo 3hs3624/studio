@@ -5,6 +5,7 @@ from django.db.models import Q
 
 ROLES = ['SERVICE_MANAGER', 'AGENT', 'ORG_ADMIN', 'RESOURCE_READER']
 STATUSES = ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED']
+REQUEST_STATUSES = ['PENDING_APPROVAL','APPROVED','IN_PROGRESS','FULFILLED','CLOSED','REJECTED','CANCELLED']
 
 class Base(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -81,8 +82,9 @@ class Ticket(Base):
     row_version = models.PositiveIntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)
     class Meta:
-        constraints = [models.CheckConstraint(condition=Q(status__in=STATUSES), name='ticket_status'),
-                       models.CheckConstraint(condition=Q(type='INCIDENT'), name='ticket_type')]
+        constraints = [models.CheckConstraint(condition=Q(status__in=STATUSES+REQUEST_STATUSES), name='ticket_status'),
+                       models.CheckConstraint(condition=Q(type__in=['INCIDENT','SERVICE_REQUEST']), name='ticket_type'),
+                       models.CheckConstraint(condition=(Q(type='INCIDENT',status__in=STATUSES)|Q(type='SERVICE_REQUEST',status__in=REQUEST_STATUSES)),name='ticket_type_status')]
         indexes = [models.Index(fields=['organization', 'requested_by', '-created_at', '-id']),
                    models.Index(fields=['organization', 'group', 'status', '-created_at']),
                    models.Index(fields=['organization', 'assignee', 'status', '-created_at'])]
@@ -225,8 +227,69 @@ class Notification(Base):
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
     recipient = models.ForeignKey(Person, on_delete=models.PROTECT)
     ticket = models.ForeignKey(Ticket, on_delete=models.PROTECT)
-    alert = models.ForeignKey(SLAAlert, on_delete=models.PROTECT)
+    alert = models.ForeignKey(SLAAlert, null=True, on_delete=models.PROTECT)
+    event = models.ForeignKey(AuditEvent, null=True, on_delete=models.PROTECT)
+    kind = models.CharField(max_length=30, default='SLA')
     read_at = models.DateTimeField(null=True)
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['recipient','alert'],name='notification_recipient_alert')]
+        constraints = [models.UniqueConstraint(fields=['recipient','alert'],name='notification_recipient_alert'),
+            models.UniqueConstraint(fields=['recipient','event'],condition=Q(event__isnull=False),name='notification_recipient_event'),
+            models.CheckConstraint(condition=(Q(kind='SLA',alert__isnull=False,event__isnull=True)|
+                Q(kind__in=['APPROVAL_REQUESTED','APPROVAL_DECIDED','REQUEST_READY','REQUEST_FULFILLED','REQUEST_CANCELLED'],alert__isnull=True,event__isnull=False)),name='notification_source')]
         indexes = [models.Index(fields=['recipient','-created_at','-id'])]
+
+class CatalogItem(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    code = models.CharField(max_length=40)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','code'],name='catalog_item_code')]
+
+class CatalogVersion(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    item = models.ForeignKey(CatalogItem, on_delete=models.PROTECT, related_name='versions')
+    version = models.PositiveIntegerField()
+    name = models.CharField(max_length=200)
+    description = models.TextField()
+    fulfillment_group = models.ForeignKey(Group, on_delete=models.PROTECT)
+    approval_required = models.BooleanField(default=True)
+    approver = models.ForeignKey(Person, null=True, on_delete=models.PROTECT)
+    public_to_org = models.BooleanField(default=True)
+    available = models.BooleanField(default=True)
+    fields = models.JSONField(default=list)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['item','version'],name='catalog_version_unique'),
+            models.CheckConstraint(condition=(Q(approval_required=True,approver__isnull=False)|Q(approval_required=False,approver__isnull=True)),name='catalog_approval_config')]
+
+class CatalogAudience(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    catalog_version = models.ForeignKey(CatalogVersion, on_delete=models.PROTECT, related_name='audiences')
+    group = models.ForeignKey(Group, on_delete=models.PROTECT)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['catalog_version','group'],name='catalog_audience_unique')]
+
+class ServiceRequest(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    ticket = models.OneToOneField(Ticket, on_delete=models.PROTECT, related_name='service_request')
+    catalog_version = models.ForeignKey(CatalogVersion, on_delete=models.PROTECT)
+    values = models.JSONField(default=dict)
+    snapshot = models.JSONField()
+    resubmission_of = models.ForeignKey(Ticket, null=True, on_delete=models.PROTECT, related_name='resubmissions')
+
+class RequestApproval(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    ticket = models.OneToOneField(Ticket, on_delete=models.PROTECT, related_name='request_approval')
+    approver = models.ForeignKey(Person, on_delete=models.PROTECT)
+    status = models.CharField(max_length=20, default='PENDING')
+    closed_at = models.DateTimeField(null=True)
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(status__in=['PENDING','APPROVED','REJECTED','CANCELLED']),name='request_approval_status')]
+        indexes = [models.Index(fields=['approver','-created_at'],condition=Q(status='PENDING'),name='request_approval_pending')]
+
+class ApprovalDecision(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    approval = models.OneToOneField(RequestApproval, on_delete=models.PROTECT, related_name='decision')
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    decision = models.CharField(max_length=10)
+    reason = models.TextField(blank=True)
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(decision__in=['APPROVE','REJECT']),name='approval_decision_value')]

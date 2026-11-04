@@ -224,11 +224,17 @@ def evaluate_due(at=None,limit=500):
 
 def visible_notifications(p):
     from . import services as s
+    from .catalog import request_query
     tickets=Q(ticket__requested_by=p) | (Q(ticket__group_id__in=s.group_ids(p)) & ~Q(ticket__status='NEW'))
     qs=Notification.objects.filter(organization=p.organization,recipient=p)
-    return qs if s.manager(p) else qs.filter(tickets)
+    return qs if s.manager(p) else qs.filter((Q(ticket__type='INCIDENT') & tickets)|Q(ticket_id__in=request_query(p).values('id')))
 
 def notification_data(n):
+    labels={'APPROVAL_REQUESTED':'승인 요청','APPROVAL_DECIDED':'승인 결과','REQUEST_READY':'처리 대기',
+            'REQUEST_FULFILLED':'서비스 처리 완료','REQUEST_CANCELLED':'요청 취소'}
+    sla=n.kind=='SLA'
+    label=(('응답' if n.alert.goal=='RESPONSE' else '해결')+' · '+('기한 초과' if n.alert.level=='BREACH' else '기한 임박')) if sla else labels[n.kind]
     return {'id':str(n.id),'ticket_id':str(n.ticket_id),'ticket_title':n.ticket.title,
-            'goal':n.alert.goal,'level':n.alert.level,'created_at':n.created_at.isoformat(),
+            'kind':n.kind,'label':label,'ticket_url':('/work/incidents/' if sla else '/portal/requests/')+str(n.ticket_id),
+            'goal':n.alert.goal if sla else 'REQUEST','level':n.alert.level if sla else 'INFO','created_at':n.created_at.isoformat(),
             'read_at':n.read_at.isoformat() if n.read_at else None}

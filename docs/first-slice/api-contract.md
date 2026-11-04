@@ -70,3 +70,7 @@ Idempotency-Key: demo-resolve-001
 ## SLA 확장
 
 티켓 응답의 sla 필드, 달력·정책 게시, 알림 조회·읽음 API는 [SLA 추가 명세](../sla.md)를 따릅니다. 기존 API 경로·상태 전이·인증 규약은 유지합니다.
+
+## 서비스 요청 확장
+
+서비스 카탈로그·요청·승인 API는 [추가 명세](../service-requests.md)를 따릅니다. 기존 장애 API는 INCIDENT만 다루며 SERVICE_REQUEST를 조회·변경하지 않습니다. 알림 응답에는 kind,label,ticket_url을 추가했고 기존 SLA 필드는 유지합니다.

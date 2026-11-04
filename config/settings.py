@@ -28,7 +28,7 @@ if os.environ.get('DB_ENGINE') == 'postgresql':
 else:
     if not DEBUG:
         raise ImproperlyConfigured('Production requires DB_ENGINE=postgresql.')
-    DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3',
+    DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': os.environ.get('SQLITE_PATH',BASE_DIR / 'db.sqlite3'),
                              'OPTIONS': {'timeout': 15}}}
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
