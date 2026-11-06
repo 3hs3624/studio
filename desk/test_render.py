@@ -47,3 +47,24 @@ class HostedProvisionTests(TestCase):
         with patch.dict(os.environ,values):
             with self.assertRaises(CommandError):call_command('bootstrap_local_access',password_prefix='TEST_',stdout=io.StringIO())
         self.assertFalse(Person.objects.exists())
+
+
+class RenderEntrypointTests(SimpleTestCase):
+    def test_entrypoint_executes_ordered_steps_without_nested_shell_quoting(self):
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        root=Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as d:
+            folder=Path(d);log=folder/'steps'
+            for executable in ['python','gunicorn']:
+                stub=folder/executable
+                stub.write_text('#!/bin/sh\nprintf "%s\\n" "'+executable+' $*" >> "$STEP_LOG"\n')
+                stub.chmod(0o755)
+            result=subprocess.run(['sh',str(root/'deploy/start-render')],env={**os.environ,'PATH':str(folder)+':'+os.environ['PATH'],'STEP_LOG':str(log),'PORT':'10000'},capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            lines=log.read_text().splitlines()
+            self.assertEqual(lines[0],'python manage.py migrate --noinput')
+            self.assertIn('bootstrap_local_access',lines[1])
+            self.assertIn('--bind 0.0.0.0:10000',lines[2])
+            self.assertEqual(len(lines),3)

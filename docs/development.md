@@ -28,7 +28,7 @@ DEBUG=1 python manage.py process_outbox
 DEBUG=1 python manage.py evaluate_sla
 ```
 
-현재 테스트는 총 145개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
+현재 테스트는 총 146개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
 
 PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT로 설정합니다. 테스트 DB를 생성할 수 있는 **테스트 전용** 권한이 필요합니다. 운영 계정에는 DB 생성 권한을 부여하지 않습니다. CI에 SQLite·PostgreSQL 16 검증 job을 정의했습니다.
 

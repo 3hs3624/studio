@@ -16,7 +16,8 @@ Render 계정 로그인 후 생성할 웹/DB가 모두 Free인지 검토하고 �
 - Render의 생성 호스트만 ALLOWED_HOSTS와 CSRF origin에 추가, HTTPS 프록시 신뢰·Secure 쿠키 적용
 - DATABASE_URL을 해석하되 PostgreSQL/TLS만 허용하고 접속 값은 로그에 출력하지 않음
 - WhiteNoise가 정적파일 제공; Caddy 컨테이너/별도 정적 호스팅 없이 기존 Django UI 유지
-- 최초 기동에서 마이그레이션·역할별 임시 계정 발급, 재기동에서 기존 비밀번호 유지
+- 전용 실행 파일 /app/deploy/start-render에서 마이그레이션·역할별 계정 발급 후 exec Gunicorn. 플랫폼의 중첩 shell 따옴표 처리에 의존하지 않음
+- 재기동에서 기존 비밀번호 유지
 - Render가 SECRET_KEY와 계정별 비밀번호 5개를 서로 다른 비밀 환경변수로 생성
 
 ## 접속 방법
