@@ -1,12 +1,21 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
+from django.contrib.auth.forms import AuthenticationForm
+from django.core.exceptions import ValidationError
 from django.core.cache import cache
 from django.http import HttpResponse
 from django.shortcuts import render, redirect
 from . import services as s
 from .models import Person, Group, Membership, Asset, ConfigurationItem, Comment, StatusHistory, ROLES
 
+class LocalAccountAuthenticationForm(AuthenticationForm):
+    def confirm_login_allowed(self,user):
+        super().confirm_login_allowed(user)
+        if not Person.objects.filter(user=user,active=True,organization__active=True).exists():
+            raise ValidationError('로그인할 수 없습니다. 계정 상태를 확인하십시오.',code='inactive')
+
 class StudioLoginView(LoginView):
+    authentication_form = LocalAccountAuthenticationForm
     """Local process throttle; shared edge throttling is required for multi-worker deployments."""
     def post(self,request,*args,**kwargs):
         key='login:'+request.META.get('REMOTE_ADDR','unknown')

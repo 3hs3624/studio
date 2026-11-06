@@ -58,3 +58,12 @@ CSRF_FAILURE_VIEW = 'desk.api.csrf_failure'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 65536
 SESSION_COOKIE_AGE = 28800
 SESSION_SAVE_EVERY_REQUEST = False
+
+# SSO remains deferred. Accept only the implemented authentication provider.
+AUTH_MODE = os.environ.get('AUTH_MODE','local')
+if AUTH_MODE != 'local':
+    raise ImproperlyConfigured('Only local authentication is currently implemented; configure SSO after provider integration.')
+AUTHENTICATION_BACKENDS = ['django.contrib.auth.backends.ModelBackend']
+# Enable only behind the private, non-published web service in deploy/compose.yaml.
+if os.environ.get('TRUST_PROXY_HEADERS') == '1':
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO','https')

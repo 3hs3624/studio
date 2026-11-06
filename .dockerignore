@@ -1,0 +1,12 @@
+*
+!requirements.txt
+!deploy/
+deploy/*
+!deploy/requirements.txt
+!config/
+!config/**
+!desk/
+!desk/**
+!manage.py
+**/__pycache__
+**/*.pyc

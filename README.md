@@ -8,6 +8,7 @@ IBM Maximo IT가 다루는 업무 영역을 참고하여 IT 서비스·자산·�
 
 - [계정·세션 통제 구현](docs/account-security.md)
 - [Workflow 버전 관리 개발 범위](docs/workflow-versioning.md)
+- [SSO 전 임시 계정·HTTPS 기동](docs/temporary-local-access.md)
 - [로컬 실행 안내](docs/development.md)
 - [구현 범위·검증·제한](docs/first-slice/implementation-status.md)
 - [구매·계약·입고·재고](docs/purchasing-inventory.md)

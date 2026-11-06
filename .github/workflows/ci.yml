@@ -55,3 +55,16 @@ jobs:
       - run: python manage.py migrate
       - run: python manage.py migrate desk zero
       - run: python manage.py migrate
+  temporary-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python deploy/configure.py
+      - run: docker compose -f deploy/compose.yaml up -d --build --wait --wait-timeout 180
+      - run: docker compose -f deploy/compose.yaml cp proxy:/data/caddy/pki/authorities/local/root.crt /tmp/studio-root.crt
+      - run: python deploy/check_access.py --ca /tmp/studio-root.crt
+      - if: always()
+        run: docker compose -f deploy/compose.yaml down
