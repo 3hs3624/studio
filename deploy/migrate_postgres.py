@@ -51,7 +51,8 @@ def table_hash(conn, table):
     if not keys:
         raise MigrationError('A source table lacks a primary key.')
     statement = sql.SQL('COPY (SELECT * FROM {} ORDER BY {}) TO STDOUT WITH (FORMAT binary)').format(
-        sql.Identifier('public', table), sql.SQL(',').join(map(sql.Identifier, keys)))
+        sql.Identifier('public', table), sql.SQL(',').join(
+            sql.SQL('{}::text COLLATE "C"').format(sql.Identifier(key)) for key in keys))
     digest = hashlib.sha256()
     with conn.cursor().copy(statement) as stream:
         for block in stream:
