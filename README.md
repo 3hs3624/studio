@@ -6,6 +6,9 @@ IBM Maximo IT가 다루는 업무 영역을 참고하여 IT 서비스·자산·�
 
 ## 실행과 구현 현황
 
+[Render에서 외부 임시 접속 환경 만들기](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2F3hs3624%2Fstudio%2Ftree%2Ffeature%2Fincident-workflow) — 서버·DB·HTTPS·계정 자동 구성. 사용자 Render 로그인/배포 승인 필요. 무료 DB 30일 제한 등은 [배포 안내](docs/render-deployment.md)를 확인하십시오.
+
+
 - [계정·세션 통제 구현](docs/account-security.md)
 - [Workflow 버전 관리 개발 범위](docs/workflow-versioning.md)
 - [SSO 전 임시 계정·HTTPS 기동](docs/temporary-local-access.md)

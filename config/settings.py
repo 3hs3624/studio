@@ -21,7 +21,10 @@ TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates', 'DIR
               'OPTIONS': {'context_processors': ['django.template.context_processors.request',
                'django.contrib.auth.context_processors.auth', 'django.contrib.messages.context_processors.messages']}}]
 WSGI_APPLICATION = 'config.wsgi.application'
-if os.environ.get('DB_ENGINE') == 'postgresql':
+if os.environ.get('DATABASE_URL'):
+    from desk.deployment import postgres_url
+    DATABASES = {'default':postgres_url(os.environ['DATABASE_URL'])}
+elif os.environ.get('DB_ENGINE') == 'postgresql':
     DATABASES = {'default': {'ENGINE': 'django.db.backends.postgresql', 'NAME': os.environ['DB_NAME'],
                   'USER': os.environ['DB_USER'], 'PASSWORD': os.environ.get('DB_PASSWORD', ''),
                   'HOST': os.environ.get('DB_HOST', 'localhost'), 'PORT': os.environ.get('DB_PORT', '5432')}}
@@ -67,3 +70,14 @@ AUTHENTICATION_BACKENDS = ['django.contrib.auth.backends.ModelBackend']
 # Enable only behind the private, non-published web service in deploy/compose.yaml.
 if os.environ.get('TRUST_PROXY_HEADERS') == '1':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO','https')
+
+# Provider-generated host is trusted configuration, never an incoming HTTP header.
+if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+    from desk.deployment import render_host
+    render_hostname=render_host(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+    ALLOWED_HOSTS=[h for h in ALLOWED_HOSTS if h]+[render_hostname]
+    CSRF_TRUSTED_ORIGINS=CSRF_TRUSTED_ORIGINS+['https://'+render_hostname]
+if os.environ.get('SERVE_STATIC') == '1':
+    MIDDLEWARE.insert(1,'whitenoise.middleware.WhiteNoiseMiddleware')
+    STORAGES={'default':{'BACKEND':'django.core.files.storage.FileSystemStorage'},
+              'staticfiles':{'BACKEND':'whitenoise.storage.CompressedStaticFilesStorage'}}

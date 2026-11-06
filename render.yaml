@@ -1,0 +1,48 @@
+# Temporary evaluation only: free PostgreSQL expires after 30 days.
+services:
+  - type: web
+    name: studio-itsm-preview
+    runtime: docker
+    plan: free
+    region: singapore
+    autoDeployTrigger: 'off'
+    dockerfilePath: ./Dockerfile
+    dockerCommand: >-
+      sh -c 'python manage.py migrate --noinput &&
+      python manage.py bootstrap_local_access --password-prefix STUDIO_LOCAL_ &&
+      exec gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-10000} --workers 2 --timeout 60 --access-logfile - --error-logfile -'
+    healthCheckPath: /login/
+    envVars:
+      - key: DEBUG
+        value: '0'
+      - key: AUTH_MODE
+        value: local
+      - key: SERVE_STATIC
+        value: '1'
+      - key: TRUST_PROXY_HEADERS
+        value: '1'
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: studio-itsm-preview-db
+          property: connectionString
+      - key: STUDIO_LOCAL_TEMP_ADMIN_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_MANAGER_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_EMPLOYEE_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_ASSETS_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_BUYER_PASSWORD
+        generateValue: true
+
+databases:
+  - name: studio-itsm-preview-db
+    plan: free
+    region: singapore
+    postgresMajorVersion: '16'
+    databaseName: studio
+    user: studio
+    ipAllowList: []

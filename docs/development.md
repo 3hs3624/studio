@@ -28,7 +28,7 @@ DEBUG=1 python manage.py process_outbox
 DEBUG=1 python manage.py evaluate_sla
 ```
 
-현재 테스트는 총 141개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
+현재 테스트는 총 145개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
 
 PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT로 설정합니다. 테스트 DB를 생성할 수 있는 **테스트 전용** 권한이 필요합니다. 운영 계정에는 DB 생성 권한을 부여하지 않습니다. CI에 SQLite·PostgreSQL 16 검증 job을 정의했습니다.
 
@@ -74,3 +74,7 @@ PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWOR
 ## SSO 보류와 임시 계정
 
 실제 IdP 연결은 보류하며 [임시 접속 구성](temporary-local-access.md)으로 Django 비밀번호 인증을 사용합니다. Docker Compose로 PostgreSQL·Gunicorn·Caddy HTTPS를 기동하고, 새 설치에 한해 역할별 임시 계정과 서로 다른 비밀번호를 발급합니다. 서버·DNS·접속 권한 없이 외부 접속 URL을 만들 수는 없으므로 로컬 기동과 공인 배포 결과를 구분합니다.
+
+## 외부 임시 배포
+
+[Render 원클릭 배포](render-deployment.md)에 Free 웹/DB·생성 HTTPS 호스트·정적파일·환경변수 계정 발급을 구성했습니다. 실제 외부 배포에는 Render 계정 로그인/생성 승인이 필요하며, 구성 준비를 배포 성공으로 표시하지 않습니다.
