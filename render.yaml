@@ -1,4 +1,4 @@
-# Temporary evaluation only: free PostgreSQL expires after 30 days.
+# External Neon PostgreSQL. Retain the original Render DB until separately retired.
 services:
   - type: web
     name: studio-itsm-preview
@@ -21,9 +21,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        fromDatabase:
-          name: studio-itsm-preview-db
-          property: connectionString
+        sync: false
       - key: STUDIO_LOCAL_TEMP_ADMIN_PASSWORD
         generateValue: true
       - key: STUDIO_LOCAL_TEMP_MANAGER_PASSWORD

@@ -68,10 +68,24 @@ class RenderEntrypointTests(SimpleTestCase):
                 stub=folder/executable
                 stub.write_text('#!/bin/sh\nprintf "%s\\n" "'+executable+' $*" >> "$STEP_LOG"\n')
                 stub.chmod(0o755)
-            result=subprocess.run(['sh',str(root/'deploy/start-render')],env={**os.environ,'PATH':str(folder)+':'+os.environ['PATH'],'STEP_LOG':str(log),'PORT':'10000'},capture_output=True,text=True)
+            result=subprocess.run(['sh',str(root/'deploy/start-render')],env={**os.environ,'VERIFY_HOSTED_ACCESS':'0','NEON_MIGRATION_TARGET_URL':'','PATH':str(folder)+':'+os.environ['PATH'],'STEP_LOG':str(log),'PORT':'10000'},capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
             lines=log.read_text().splitlines()
             self.assertEqual(lines[0],'python manage.py migrate --noinput')
             self.assertIn('bootstrap_local_access',lines[1])
             self.assertIn('--bind 0.0.0.0:10000',lines[2])
             self.assertEqual(len(lines),3)
+
+    def test_migration_failure_prevents_server_and_bootstrap(self):
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        root=Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as d:
+            folder=Path(d);log=folder/'steps'
+            stub=folder/'python'
+            stub.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$STEP_LOG"\nexit 1\n')
+            stub.chmod(0o755)
+            result=subprocess.run(['sh',str(root/'deploy/start-render')],env={**os.environ,'PATH':str(folder)+':'+os.environ['PATH'],'STEP_LOG':str(log),'NEON_MIGRATION_TARGET_URL':'not-logged'},capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertEqual(log.read_text().splitlines(),['deploy/migrate_postgres.py'])

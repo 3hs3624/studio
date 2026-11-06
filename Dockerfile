@@ -1,5 +1,12 @@
 # syntax=docker/dockerfile:1
+FROM postgres:16-bookworm AS postgres-tools
 FROM python:3.12-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 liblz4-1 libzstd1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=postgres-tools /usr/lib/postgresql/16/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=postgres-tools /usr/lib/postgresql/16/bin/pg_restore /usr/local/bin/pg_restore
+COPY --from=postgres-tools /usr/lib/x86_64-linux-gnu/libpq.so.5 /usr/local/lib/libpq.so.5
+RUN ldconfig && pg_dump --version && pg_restore --version
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ARG APP_UID=1000
 ARG APP_GID=1000

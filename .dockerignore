@@ -4,6 +4,7 @@
 deploy/*
 !deploy/requirements.txt
 !deploy/start-render
+!deploy/migrate_postgres.py
 !config/
 !config/**
 !desk/

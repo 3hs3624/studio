@@ -66,8 +66,15 @@ jobs:
       - run: docker compose -f deploy/compose.yaml up -d --build --wait --wait-timeout 180
       - run: docker compose -f deploy/compose.yaml cp proxy:/data/caddy/pki/authorities/local/root.crt /tmp/studio-root.crt
       - run: python deploy/check_access.py --ca /tmp/studio-root.crt
+      - name: Verify PostgreSQL cutover on disposable databases
+        run: |
+          docker compose -f deploy/compose.yaml cp deploy/check_migration.py web:/tmp/check_migration.py
+          docker compose -f deploy/compose.yaml exec -T web python /tmp/check_migration.py
       - name: Verify provider-hosted static and HTTPS settings
         run: |
           docker compose -f deploy/compose.yaml exec -T -e SERVE_STATIC=1 -e RENDER_EXTERNAL_HOSTNAME=studio-test.onrender.com web python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings'); import django; django.setup(); from django.test import Client; c=Client(HTTP_HOST='studio-test.onrender.com'); assert c.get('/login/', secure=True).status_code == 200; assert c.get('/static/desk/app.css', secure=True).status_code == 200; print('Hosted static files and generated hostname verified.')"
+      - name: Verify hosted password authentication for five roles
+        run: |
+          docker compose -f deploy/compose.yaml exec -T -e SERVE_STATIC=1 -e RENDER_EXTERNAL_HOSTNAME=studio-test.onrender.com web python -c "import os,json; accounts=json.load(open('/run/access/temporary-accounts.json'))['accounts']; os.environ.update({'STUDIO_LOCAL_'+a['username'].upper().replace('-','_')+'_PASSWORD':a['password'] for a in accounts}); os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings'); import django; django.setup(); from django.core.management import call_command; call_command('check_hosted_access')"
       - if: always()
         run: docker compose -f deploy/compose.yaml down
