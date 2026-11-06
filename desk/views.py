@@ -114,7 +114,9 @@ def admin_access(request):
         people=[]
         for p in Person.objects.filter(organization=c['org']).order_by('display_name'):
             people.append({'person':p,'roles':[{'name':r,'checked':r in s.roles(p)} for r in ROLES]})
-        c.update(people=people,groups=Group.objects.filter(organization=c['org']))
+        from .models import SecurityEvent
+        c.update(people=people,groups=Group.objects.filter(organization=c['org']),
+                 security_events=SecurityEvent.objects.filter(organization=c['org']).select_related('person').order_by('-created_at')[:50])
         c['memberships']=[{'group':g,'people':[{'person':item['person'],
                  'checked':Membership.objects.filter(group=g,person=item['person']).exists()} for item in people]} for g in c['groups']]
         return render(request,'desk/access.html',c)

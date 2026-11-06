@@ -19,6 +19,7 @@ class Organization(Base):
     active = models.BooleanField(default=True)
 
 class Person(Base):
+    session_epoch = models.UUIDField(default=uuid.uuid4, editable=False)
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='person')
     display_name = models.CharField(max_length=200)
@@ -482,3 +483,11 @@ class AssetContractLink(Base):
     actor = models.ForeignKey(Person, on_delete=models.PROTECT)
     class Meta:
         constraints = [models.UniqueConstraint(fields=['asset','contract'],name='asset_contract_unique')]
+
+class SecurityEvent(Base):
+    organization = models.ForeignKey(Organization, null=True, on_delete=models.PROTECT)
+    person = models.ForeignKey(Person, null=True, on_delete=models.PROTECT)
+    action = models.CharField(max_length=40)
+    request_id = models.UUIDField()
+    class Meta:
+        indexes = [models.Index(fields=['organization','-created_at'])]

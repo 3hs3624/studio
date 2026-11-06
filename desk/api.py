@@ -37,6 +37,8 @@ def endpoint(methods):
                 return response
             try:
                 request.actor=s.actor_for(request.user)
+                from .security import SESSION_KEY
+                request.actor._session_binding=request.session.get(SESSION_KEY,'')
                 result=fn(request,*args,**kwargs)
                 return result if isinstance(result,HttpResponse) else JsonResponse(result)
             except s.BusinessError as exc:
@@ -367,3 +369,21 @@ def approvals(request):
     qs=catalog.request_query(request.actor).filter(request_approval__approver=request.actor,
                       request_approval__status='PENDING',status='PENDING_APPROVAL')
     return s.page(request.actor,qs,params,lambda t:catalog.request_data(request.actor,t,False),'approvals')
+
+
+@endpoint(['POST'])
+def account_state(request,id):
+    return command(request,'admin_account',id)
+
+@endpoint(['POST'])
+def revoke_sessions(request,id):
+    return command(request,'admin_revoke_sessions',id)
+
+@endpoint(['GET'])
+def security_events(request):
+    from .models import SecurityEvent
+    s.require_admin(request.actor)
+    params=query(request,['limit','cursor'])
+    return s.page(request.actor,SecurityEvent.objects.filter(organization=request.actor.organization).select_related('person'),
+        params,lambda e:{'id':str(e.id),'action':e.action,'person':s.person_data(e.person) if e.person else None,
+                        'created_at':e.created_at.isoformat(),'request_id':str(e.request_id)},'security_events')

@@ -16,6 +16,9 @@ document.querySelectorAll('.api-form').forEach(form => {
       Object.assign(payload, {body: inputs.get('body'), visibility: inputs.get('visibility')});
     } else if (kind === 'roles') {
       payload.roles = inputs.getAll('roles');
+    } else if (kind === 'account' || kind === 'revoke-sessions') {
+      payload.reason=inputs.get('reason');
+      if (kind === 'account') payload.active=inputs.get('active')==='true';
     } else if (kind === 'membership') {
       payload.active = inputs.get('active') === 'on';
     } else if (kind === 'sla-calendar') {

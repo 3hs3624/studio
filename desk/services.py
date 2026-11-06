@@ -207,12 +207,18 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         fail('IDEMPOTENCY_REQUIRED','Idempotency-Key가 필요합니다.',400)
     op_key = f'{operation}:{target or ""}:{subtarget or ""}'
     digest = hashlib.sha256(json.dumps(data,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+    session_binding=getattr(p,'_session_binding',None)
     with transaction.atomic():
         # Coarse per-organization lock prioritizes correctness in the first release.
         Organization.objects.select_for_update().get(id=p.organization_id)
         p = Person.objects.select_for_update().get(id=p.id)
         if not p.active or not p.user.is_active or not p.organization.active:
             fail('FORBIDDEN','활성 계정이 필요합니다.',403)
+        if session_binding is not None:
+            from .security import binding
+            from django.utils.crypto import constant_time_compare
+            if not constant_time_compare(session_binding,binding(p)):
+                fail('SESSION_REVOKED','다시 로그인하십시오.',403)
         authorize_command(p,operation,target)
         previous = IdempotencyRecord.objects.filter(organization=p.organization,actor=p,operation=op_key,key=key).first()
         if previous:
@@ -393,6 +399,33 @@ def mutate(p, op, data, request_id, target, subtarget):
 
 def admin_mutate(p,op,data,request_id,target,subtarget):
     require_admin(p)
+    if op in ('admin_account','admin_revoke_sessions'):
+        fields=['expected_version','reason'] + (['active'] if op=='admin_account' else [])
+        check_fields(data,fields,fields)
+        member=Person.objects.select_for_update().get(id=target,organization=p.organization)
+        version(member,data)
+        reason=text(data,'reason')
+        before={'active':member.active}
+        if op=='admin_account':
+            if type(data['active']) is not bool:
+                fail('INVALID_ACCOUNT','active는 boolean이어야 합니다.')
+            if not data['active']:
+                if member.id==p.id:
+                    fail('ADMIN_PROTECTED','본인 계정을 중지할 수 없습니다.',409)
+                if 'ORG_ADMIN' in roles(member) and not RoleGrant.objects.filter(organization=p.organization,role='ORG_ADMIN',person__active=True,person__user__is_active=True).exclude(person=member).exists():
+                    fail('ADMIN_PROTECTED','마지막 활성 관리자를 중지할 수 없습니다.',409)
+                if Ticket.objects.filter(assignee=member).exclude(status__in=['CLOSED','REJECTED','CANCELLED']).exists():
+                    fail('OPEN_ASSIGNMENTS','열린 배정 건을 먼저 재배정하십시오.',409)
+                from .models import RequestApproval, PurchaseRequisition
+                if RequestApproval.objects.filter(approver=member,status='PENDING').exists() or PurchaseRequisition.objects.filter(approver=member,status='PENDING').exists():
+                    fail('PENDING_APPROVALS','대기 중인 승인을 먼저 정리하십시오.',409)
+            member.active=data['active']
+        member.session_epoch=uuid.uuid4()
+        bump(member)
+        # bump persists all fields; no session or token value enters the audit payload.
+        record(p,member,'ACCOUNT_CHANGED' if op=='admin_account' else 'SESSIONS_REVOKED',request_id,
+            before,{'active':member.active,'reason':reason})
+        return {'person_version':member.row_version,'active':member.active},200
     if op=='admin_members':
         check_fields(data,['active','expected_version'],['active','expected_version'])
         group=Group.objects.get(id=target,organization=p.organization)
@@ -408,6 +441,8 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
             if Ticket.objects.filter(group=group,assignee=member).exclude(status__in=['CLOSED','REJECTED','CANCELLED']).exists():
                 fail('OPEN_ASSIGNMENTS','열린 배정 건을 먼저 재배정하십시오.',409)
             Membership.objects.filter(group=group,person=member).delete()
+        member.session_epoch=uuid.uuid4()
+        bump(member)
         bump(group)
         record(p,group,'MEMBERSHIP_CHANGED',request_id,after={'person_id':str(member.id),'active':data['active']})
         return {'group_version':group.row_version},200
@@ -428,6 +463,8 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
     RoleGrant.objects.filter(person=member).delete()
     for role in desired:
         RoleGrant.objects.create(organization=p.organization,person=member,role=role)
+    if old != set(desired):
+        member.session_epoch=uuid.uuid4()
     bump(member)
     record(p,member,'ROLES_CHANGED',request_id,{'roles':sorted(old)},{'roles':sorted(desired)})
     return {'person_version':member.row_version},200

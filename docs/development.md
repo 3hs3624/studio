@@ -28,7 +28,7 @@ DEBUG=1 python manage.py process_outbox
 DEBUG=1 python manage.py evaluate_sla
 ```
 
-현재 테스트는 총 121개이며 SQLite에서는 PostgreSQL 전용 동시성 12개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
+현재 테스트는 총 135개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
 
 PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT로 설정합니다. 테스트 DB를 생성할 수 있는 **테스트 전용** 권한이 필요합니다. 운영 계정에는 DB 생성 권한을 부여하지 않습니다. CI에 SQLite·PostgreSQL 16 검증 job을 정의했습니다.
 
@@ -66,3 +66,7 @@ PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWOR
 ## 구매·계약·재고
 
 [추가 명세](purchasing-inventory.md)를 참조하십시오. manager가 구매 요청→buyer가 지정 승인·발주 확정→stockadmin이 부분 입고·창고 이동·출고를 수행합니다. 창고 관리 장비의 지급·반납·폐기는 자산·재고 두 역할을 요구하며, 반납 시 창고를 지정해야 합니다. 계약·공급업체 금액·연락처는 구매 역할로 제한합니다. 공급업체 반품·실사 조정·계약 만료 알림은 후속입니다.
+
+## 계정·세션 통제
+
+[구현 명세](account-security.md)를 참조하십시오. 조직 관리 화면에서 계정 중지·재활성화·기존 세션 회수와 최근 접속 이력을 제공합니다. 역할/그룹 변경 또는 명시적 회수 이후 기존 로그인은 다시 인증해야 합니다. 마이그레이션 전 세션도 재로그인이 필요합니다. SSO는 아직 미구현입니다. 3단계 Workflow 개발에는 [버전 관리](workflow-versioning.md)를 포함합니다.
