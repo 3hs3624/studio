@@ -28,7 +28,7 @@ DEBUG=1 python manage.py process_outbox
 DEBUG=1 python manage.py evaluate_sla
 ```
 
-현재 테스트는 총 146개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
+현재 테스트는 총 147개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
 
 PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT로 설정합니다. 테스트 DB를 생성할 수 있는 **테스트 전용** 권한이 필요합니다. 운영 계정에는 DB 생성 권한을 부여하지 않습니다. CI에 SQLite·PostgreSQL 16 검증 job을 정의했습니다.
 
@@ -78,3 +78,7 @@ PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWOR
 ## 외부 임시 배포
 
 [Render 원클릭 배포](render-deployment.md)에 Free 웹/DB·생성 HTTPS 호스트·정적파일·환경변수 계정 발급을 구성했습니다. 실제 외부 배포에는 Render 계정 로그인/생성 승인이 필요하며, 구성 준비를 배포 성공으로 표시하지 않습니다.
+
+## 외부 무료 DB 이전 준비
+
+[Neon 이전 계획](external-postgres-migration.md)에 원본 보존·백업/대사·쓰기 중지·전환/복구 기준을 정리했습니다. Neon 표준 TLS/채널바인딩 접속 옵션을 해석하지만 현재 서비스의 DATABASE_URL은 변경하지 않았고 실제 이전도 아직 수행하지 않았습니다.

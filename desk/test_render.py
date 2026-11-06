@@ -19,6 +19,13 @@ class HostingConfigTests(SimpleTestCase):
             with self.assertRaises(ImproperlyConfigured) as err:postgres_url(value)
             self.assertNotIn('p@ss',str(err.exception))
 
+    def test_neon_url_preserves_tls_and_channel_binding(self):
+        result=postgres_url('postgresql://app:p%40ss@ep-example-pooler.region.neon.tech/studio?sslmode=require&channel_binding=require')
+        self.assertEqual(result['HOST'],'ep-example-pooler.region.neon.tech')
+        self.assertEqual(result['OPTIONS'],{'sslmode':'require','channel_binding':'require'})
+        for tail in ['channel_binding=disable','channel_binding=require&channel_binding=prefer','sslmode=disable&channel_binding=require']:
+            with self.assertRaises(ImproperlyConfigured):postgres_url('postgresql://app:secret@db/studio?'+tail)
+
     def test_render_host_is_not_an_unvalidated_header(self):
         self.assertEqual(render_host('studio-abc.onrender.com'),'studio-abc.onrender.com')
         for value in ['*','https://evil.example','evil.example','a.onrender.com/evil']:
