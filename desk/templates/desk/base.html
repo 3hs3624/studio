@@ -1,23 +1,13 @@
 {% load static %}<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}Studio · IT 서비스 관리{% endblock %}</title>
+<title>{% block title %}{{ area_name|default:'통합 IT 운영' }} · Studio{% endblock %}</title>
 <link rel="stylesheet" href="{% static 'desk/app.css' %}"><script src="{% static 'desk/app.js' %}" defer></script></head>
-<body><a class="skip" href="#main">본문으로 이동</a>
-<aside class="sidebar"><a class="brand" href="/portal/incidents"><span class="logo">S</span> studio<span class="brand-dot">.</span></a>
-<p class="nav-label">WORKSPACE</p><nav aria-label="주 메뉴">
-<a href="/catalog">서비스 카탈로그</a><a href="/portal/requests">내 서비스 요청</a>
-<a href="/approvals">승인함 {% if pending_approvals %}<span>{{ pending_approvals }}</span>{% endif %}</a>
-<a href="/portal/incidents">내 장애 요청 <span>↗</span></a>
-{% if can_work %}<a href="/work/incidents">서비스 데스크 <span>↗</span></a>{% endif %}
-{% if can_work %}<a href="/work/requests">서비스 요청 처리</a>{% endif %}
-<a href="/notifications">알림함 {% if unread_notifications %}<span>{{ unread_notifications }}</span>{% endif %}</a>
-{% if is_service_manager %}<a href="/work/sla">SLA · 업무 달력</a>{% endif %}
-{% if is_service_manager %}<a href="/work/catalog">카탈로그 관리</a>{% endif %}
-{% if can_purchase_request %}<a href="/procurement/requisitions">구매 요청 · 승인</a>{% endif %}
-{% if can_stock_read %}<a href="/procurement/orders">발주 · 입고</a><a href="/inventory">창고 · 재고</a>{% endif %}
-{% if can_contract_read %}<a href="/contracts">공급업체 · 계약</a>{% endif %}
-<a href="/my-assets">내 지급 자산</a><a href="/assets">IT 자산</a><a href="/cis">구성항목 · CI</a>
-{% if is_admin %}<a href="/admin/access">조직 · 권한 관리</a>{% endif %}</nav>
-<div class="sidebar-bottom"><span class="live-dot"></span> 서비스 운영 워크스페이스<br><small>Studio / IT 운영</small></div></aside>
-<div class="shell"><header class="topbar"><span>{{ org.name|default:'Studio workspace' }}</span><div class="account">{% if user.is_authenticated %}<span class="avatar">{{ actor.display_name|first }}</span>{{ actor.display_name }}<form action="/logout/" method="post">{% csrf_token %}<button class="link-button">로그아웃</button></form>{% endif %}</div></header>
-<main id="main" tabindex="-1">{% block content %}{% endblock %}</main><footer>STUDIO <span>IT service & asset management</span></footer></div></body></html>
+<body class="area-{{ active_area|default:'login' }}"><a class="skip" href="#main">본문으로 이동</a>
+<aside class="sidebar"><a class="brand" href="/"><span class="logo">s</span>studio<span class="brand-dot">.</span></a><p class="brand-caption">INTEGRATED IT OPERATIONS</p>
+{% if user.is_authenticated %}<a class="portal-link" href="/" {% if active_area == 'portal' %}aria-current="page"{% endif %}>⌂ <span>통합 홈</span><span>↗</span></a>
+<div class="nav-area"><span class="nav-area-mark">{{ active_system.code|default:'HUB' }}</span><strong>{{ area_name }}</strong><small>{{ active_system.description|default:'연결된 세 시스템, 하나의 업무 공간' }}</small></div>
+<nav aria-label="{{ area_name }} 메뉴">{% for group in nav_groups %}<div class="nav-group"><p class="nav-label">{{ group.title }}</p>{% for link in group.links %}<a href="{{ link.url }}" {% if link.active %}aria-current="page"{% endif %}>{{ link.label }}<span aria-hidden="true">›</span></a>{% endfor %}</div>{% endfor %}</nav>
+<div class="common-nav"><p class="nav-label">공통 업무</p>{% for link in common_links %}<a href="{{ link.url }}" {% if link.active %}aria-current="page"{% endif %}>{{ link.label }}{% if link.url == '/notifications' and unread_notifications %}<span class="nav-count">{{ unread_notifications }}</span>{% endif %}</a>{% endfor %}</div>
+<div class="sidebar-bottom"><span class="live-dot"></span>{{ org.name }}<small>권한에 따라 제공되는 업무 공간</small></div>{% else %}<div class="nav-area"><strong>하나로 연결되는<br>IT 운영의 모든 업무</strong><small>IT서비스 · IT자산 · IT자원</small></div>{% endif %}</aside>
+<div class="shell"><header class="topbar">{% if user.is_authenticated %}<nav class="system-tabs" aria-label="시스템 전환">{% for app in systems %}<a href="{{ app.url }}" class="system-tab {{ app.key }}" {% if active_area == app.key %}aria-current="page"{% endif %}><span class="system-dot"></span>{{ app.name }}</a>{% endfor %}</nav>{% else %}<span>Studio · 통합 IT 운영 포털</span>{% endif %}<div class="account">{% if user.is_authenticated %}<a class="notification-link" href="/notifications">알림 {% if unread_notifications %}<b>{{ unread_notifications }}</b>{% endif %}</a><span class="avatar">{{ actor.display_name|first }}</span><span class="account-name">{{ actor.display_name }}</span><form action="/logout/" method="post">{% csrf_token %}<button class="link-button">로그아웃</button></form>{% endif %}</div></header>
+<main id="main" tabindex="-1">{% if user.is_authenticated %}<div class="workspace-crumb"><a href="/">통합 포털</a>{% if active_area != 'portal' %}<span>/</span><span>{{ area_name }}</span>{% endif %}<span class="workspace-org">{{ org.name }}</span></div>{% endif %}{% block content %}{% endblock %}</main><footer><strong>studio.</strong><span>IT서비스 · IT자산 · IT자원 통합 운영</span></footer></div></body></html>

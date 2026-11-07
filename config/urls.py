@@ -5,6 +5,9 @@ from desk import api, views, asset_views, inventory_api, purchasing_views
 handler404 = 'desk.api.not_found'
 handler500 = 'desk.api.server_error'
 urlpatterns = [
+    path('systems/service',views.system_home,{'system':'service'}),
+    path('systems/asset',views.system_home,{'system':'asset'}),
+    path('systems/resource',views.system_home,{'system':'resource'}),
     path('',views.home),path('login/',views.StudioLoginView.as_view(),name='login'),
     path('logout/',LogoutView.as_view(),name='logout'),
     path('portal/incidents',views.listing),path('portal/incidents/new',views.new_incident),

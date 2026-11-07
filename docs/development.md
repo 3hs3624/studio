@@ -28,7 +28,7 @@ DEBUG=1 python manage.py process_outbox
 DEBUG=1 python manage.py evaluate_sla
 ```
 
-현재 테스트는 총 148개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
+현재 테스트는 총 153개이며 SQLite에서는 PostgreSQL 전용 동시성 13개가 건너뛰어집니다. POST 요청에는 세션 인증·CSRF 토큰·Idempotency-Key가 필요합니다. 세부 API는 [계약](first-slice/api-contract.md)에 있습니다.
 
 PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT로 설정합니다. 테스트 DB를 생성할 수 있는 **테스트 전용** 권한이 필요합니다. 운영 계정에는 DB 생성 권한을 부여하지 않습니다. CI에 SQLite·PostgreSQL 16 검증 job을 정의했습니다.
 
@@ -82,3 +82,7 @@ PostgreSQL 환경은 DEBUG=1, DB_ENGINE=postgresql, DB_NAME, DB_USER, DB_PASSWOR
 ## 외부 무료 DB 이전
 
 [Neon 이전 계획](external-postgres-migration.md)에 원본 보존·백업/대사·쓰기 중지·전환/복구 기준을 정리했습니다. Neon 표준 TLS/채널바인딩을 지원하며, 전용 빈 DB로 PostgreSQL 16 백업·복원과 데이터·시퀀스·보호 트리거 대조를 수행하는 전환 도구를 추가했습니다. 원본은 삭제하지 않고 읽기 전용으로 보존합니다. 실제 전환 상태와 계정 연결 결과는 운영 배포 기록으로 별도 확인합니다.
+
+## 통합 포털과 시스템별 화면
+
+로그인 기본 경로는 통합 홈 `/`입니다. IT서비스 `/systems/service`, IT자산 `/systems/asset`, IT자원 `/systems/resource`에 전용 현황과 메뉴를 제공합니다. 기존 업무 URL은 유지하며 역할별 메뉴와 집계 범위는 기존 권한을 사용합니다. 자세한 구조는 [통합 포털](integrated-portal.md)을 참조하십시오.

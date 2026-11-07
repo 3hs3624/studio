@@ -32,7 +32,7 @@ def context(request):
     from .sla import visible_notifications
     from .models import RequestApproval
     p=s.actor_for(request.user)
-    return {'actor':p,'roles':s.roles(p),'org':p.organization,'can_work':bool(s.group_ids(p)) or s.manager(p),
+    c = {'actor':p,'roles':s.roles(p),'org':p.organization,'can_work':bool(s.group_ids(p)) or s.manager(p),
             'is_admin':'ORG_ADMIN' in s.roles(p),'is_service_manager':s.manager(p),
             'is_asset_manager':'ASSET_MANAGER' in s.roles(p),
             'is_buyer':'PROCUREMENT_MANAGER' in s.roles(p),'is_stock_manager':'STOCK_MANAGER' in s.roles(p),
@@ -41,10 +41,14 @@ def context(request):
             'can_contract_read':bool(s.roles(p)&{'PROCUREMENT_MANAGER','ASSET_MANAGER'}),
             'pending_approvals':RequestApproval.objects.filter(organization=p.organization,approver=p,status='PENDING',ticket__status='PENDING_APPROVAL').count(),
             'unread_notifications':visible_notifications(p).filter(read_at__isnull=True).count()}
+    from .navigation import navigation
+    c.update(navigation(request.path,c))
+    return c
 
 @login_required
 def home(request):
-    return redirect('/portal/incidents')
+    c=context(request)
+    return render(request,'desk/portal.html',c)
 
 @login_required
 def listing(request,work=False):
@@ -259,3 +263,37 @@ def catalog_manage(request):
         return render(request,'desk/catalog-manage.html',c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message,status=exc.status)
+
+
+@login_required
+def system_home(request,system):
+    from .navigation import SYSTEMS
+    from .catalog import request_query
+    from . import assets
+    c=context(request);p=c['actor']
+    c['system']=next(x for x in SYSTEMS if x['key']==system)
+    if system=='service':
+        incidents=s.ticket_query(p,c['can_work'])
+        requests=request_query(p,'queue' if c['can_work'] else 'mine')
+        c.update(metrics=[{'label':'진행 중 장애','value':incidents.exclude(status__in=['RESOLVED','CLOSED']).count(),'url':'/work/incidents' if c['can_work'] else '/portal/incidents'},
+            {'label':'진행 중 서비스 요청','value':requests.exclude(status__in=['FULFILLED','CLOSED','REJECTED','CANCELLED']).count(),'url':'/work/requests' if c['can_work'] else '/portal/requests'},
+            {'label':'내 승인 대기','value':c['pending_approvals'],'url':'/approvals'}],
+            recent_items=[{'title':t.title,'number':t.number,'status':t.status,'url':('/work/incidents/' if c['can_work'] else '/portal/incidents/')+str(t.id)} for t in incidents.order_by('-created_at')[:6]],recent_title='최근 장애 요청',
+            primary_url='/catalog',primary_label='서비스 요청하기')
+    elif system=='asset':
+        qs=assets.query(p)
+        c.update(metrics=[{'label':'조회 가능한 자산','value':qs.count(),'url':'/assets'},
+            {'label':'사용 중 자산','value':qs.filter(status='IN_USE').count(),'url':'/assets?status=IN_USE'},
+            {'label':'내 지급 자산','value':qs.filter(custodian=p).count(),'url':'/my-assets'}],
+            recent_items=[{'title':a.name,'number':a.asset_no,'status':a.status,'url':'/assets/'+str(a.id)} for a in qs.order_by('-created_at')[:6]],recent_title='최근 등록 자산',
+            primary_url='/assets/new' if c['is_asset_manager'] else '/my-assets',primary_label='자산 등록' if c['is_asset_manager'] else '내 지급 자산')
+    else:
+        qs=s.resources_query(p,ConfigurationItem)
+        c.update(metrics=[{'label':'조회 가능한 구성항목','value':qs.count(),'url':'/cis'},
+            {'label':'자원 유형','value':qs.values('type').distinct().count(),'url':'/cis'},
+            {'label':'상태 분류','value':qs.values('status').distinct().count(),'url':'/cis'}],
+            recent_items=[{'title':a.name,'number':a.ci_no,'status':a.status,'url':'/cis/'+str(a.id)} for a in qs.order_by('-created_at')[:6]],recent_title='최근 등록 구성항목',
+            primary_url='/cis',primary_label='구성항목 조회')
+    labels={'NEW':'신규','ASSIGNED':'배정','IN_PROGRESS':'처리 중','PENDING':'대기','RESOLVED':'해결','CLOSED':'종료','UNVERIFIED':'미검증','STOCK':'보관','IN_USE':'사용 중','RETIRED':'폐기','ACTIVE':'운영 중','INACTIVE':'비활성'}
+    for item in c['recent_items']: item['status_label']=labels.get(item['status'],item['status'])
+    return render(request,'desk/system-home.html',c)

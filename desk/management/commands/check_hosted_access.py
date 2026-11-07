@@ -21,10 +21,13 @@ class Command(BaseCommand):
             if not token or not password:
                 raise CommandError('Hosted access verification configuration is incomplete.')
             response = client.post('/login/', {'username':username,'password':password,'csrfmiddlewaretoken':token.group(1)},secure=True,HTTP_REFERER='https://'+host+'/login/')
-            if response.status_code != 302 or '/portal/incidents' not in response.get('Location',''):
+            if response.status_code != 302 or response.get('Location','') != '/':
                 raise CommandError('Hosted password login verification failed; no password was changed.')
             if client.get('/api/v1/me',secure=True).status_code != 200:
                 raise CommandError('Hosted authenticated API verification failed.')
+            for path in ['/', '/systems/service', '/systems/asset', '/systems/resource']:
+                if client.get(path,secure=True).status_code != 200:
+                    raise CommandError('Integrated workspace verification failed.')
             static = client.get('/static/desk/app.css',secure=True)
             if static.status_code != 200:
                 raise CommandError('Hosted static asset verification failed.')

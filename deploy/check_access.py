@@ -21,7 +21,10 @@ for account in accounts:
     csrf=re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"',html).group(1)
     data=urllib.parse.urlencode({'username':account['username'],'password':account['password'],'csrfmiddlewaretoken':csrf}).encode()
     with opener.open(urllib.request.Request(login,data=data,headers={'Referer':login}),timeout=10) as r:
-        if '/portal/incidents' not in r.url:raise SystemExit('Login verification failed.')
+        if urllib.parse.urlsplit(r.url).path != '/':raise SystemExit('Login verification failed.')
+    for path in ['/systems/service','/systems/asset','/systems/resource']:
+        with opener.open(a.url.rstrip('/')+path,timeout=15) as r:
+            if r.status!=200:raise SystemExit('Integrated workspace verification failed.')
     with opener.open(a.url.rstrip('/')+'/api/v1/me',timeout=10) as r:
         if r.status!=200:raise SystemExit('Authenticated request failed.')
     with opener.open(a.url.rstrip('/')+'/static/desk/app.css',timeout=10) as r:
