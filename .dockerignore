@@ -1,0 +1,14 @@
+*
+!requirements.txt
+!deploy/
+deploy/*
+!deploy/requirements.txt
+!deploy/start-render
+!deploy/migrate_postgres.py
+!config/
+!config/**
+!desk/
+!desk/**
+!manage.py
+**/__pycache__
+**/*.pyc

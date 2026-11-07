@@ -1,0 +1,80 @@
+name: Django checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    env:
+      DEBUG: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py check
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test --verbosity 2
+      - run: python manage.py migrate
+      - run: python manage.py migrate desk zero
+      - run: python manage.py migrate
+      - run: python manage.py collectstatic --noinput
+  postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: studio_test
+          POSTGRES_USER: studio_test
+          POSTGRES_PASSWORD: local-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DEBUG: '1'
+      DB_ENGINE: postgresql
+      DB_NAME: studio_test
+      DB_USER: studio_test
+      DB_PASSWORD: local-ci-only
+      DB_HOST: localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py test --verbosity 2
+      - run: python manage.py migrate
+      - run: python manage.py migrate desk zero
+      - run: python manage.py migrate
+  temporary-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python deploy/configure.py
+      - run: docker compose -f deploy/compose.yaml up -d --build --wait --wait-timeout 180
+      - run: docker compose -f deploy/compose.yaml cp proxy:/data/caddy/pki/authorities/local/root.crt /tmp/studio-root.crt
+      - run: python deploy/check_access.py --ca /tmp/studio-root.crt
+      - name: Verify PostgreSQL cutover on disposable databases
+        run: |
+          docker compose -f deploy/compose.yaml cp deploy/check_migration.py web:/tmp/check_migration.py
+          docker compose -f deploy/compose.yaml exec -T web python /tmp/check_migration.py
+      - name: Verify provider-hosted static and HTTPS settings
+        run: |
+          docker compose -f deploy/compose.yaml exec -T -e SERVE_STATIC=1 -e RENDER_EXTERNAL_HOSTNAME=studio-test.onrender.com web python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings'); import django; django.setup(); from django.test import Client; c=Client(HTTP_HOST='studio-test.onrender.com'); assert c.get('/login/', secure=True).status_code == 200; assert c.get('/static/desk/app.css', secure=True).status_code == 200; print('Hosted static files and generated hostname verified.')"
+      - name: Verify hosted password authentication for five roles
+        run: |
+          docker compose -f deploy/compose.yaml exec -T -e SERVE_STATIC=1 -e RENDER_EXTERNAL_HOSTNAME=studio-test.onrender.com web python -c "import os,json; accounts=json.load(open('/run/access/temporary-accounts.json'))['accounts']; os.environ.update({'STUDIO_LOCAL_'+a['username'].upper().replace('-','_')+'_PASSWORD':a['password'] for a in accounts}); os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings'); import django; django.setup(); from django.core.management import call_command; call_command('check_hosted_access')"
+      - if: always()
+        run: docker compose -f deploy/compose.yaml down

@@ -1,0 +1,4 @@
+{% extends 'desk/base.html' %}{% block content %}
+<a class="back" href="{% if ci %}/cis{% else %}/assets{% endif %}">← 목록으로</a>
+<div class="page-heading"><div><p class="eyebrow">{% if ci %}CONFIGURATION ITEM{% else %}IT ASSET{% endif %}</p><h1>{{ item.name }}</h1><p class="muted">조회 전용</p></div></div>
+<section class="panel form-panel"><h2>기본 정보</h2><dl><dt>번호</dt><dd>{% if ci %}{{ item.ci_no }}{% else %}{{ item.asset_no }}{% endif %}</dd><dt>{% if ci %}유형{% else %}모델{% endif %}</dt><dd>{% if ci %}{{ item.type }}{% else %}{{ item.model|default:'—' }}{% endif %}</dd><dt>{% if ci %}상태{% else %}위치{% endif %}</dt><dd>{% if ci %}{{ item.status }}{% else %}{{ item.location|default:'—' }}{% endif %}</dd></dl></section>{% endblock %}
