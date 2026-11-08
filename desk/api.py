@@ -387,3 +387,71 @@ def security_events(request):
     return s.page(request.actor,SecurityEvent.objects.filter(organization=request.actor.organization).select_related('person'),
         params,lambda e:{'id':str(e.id),'action':e.action,'person':s.person_data(e.person) if e.person else None,
                         'created_at':e.created_at.isoformat(),'request_id':str(e.request_id)},'security_events')
+
+
+@endpoint(['GET'])
+def plugins(request):
+    from .plugin_service import catalog
+    query(request, [])
+    return {'items':catalog(request.actor)}
+
+
+@endpoint(['POST'])
+def plugin_configuration(request, plugin_id):
+    return command(request, 'plugin_configure', plugin_id)
+
+
+@endpoint(['POST'])
+def plugin_preview(request, plugin_id):
+    return command(request, 'plugin_preview', plugin_id)
+
+
+@endpoint(['GET'])
+def plugin_runs(request):
+    from .models import PluginRun
+    s.require_admin(request.actor)
+    query(request, [])
+    runs = PluginRun.objects.filter(organization=request.actor.organization).order_by('-created_at', '-id')[:50]
+    return {'items':[dict(id=str(run.id), plugin_id=run.plugin_id, plugin_version=run.plugin_version,
+                         manifest_digest=run.manifest_digest, binding_version=run.binding_version,
+                         input_length=run.input_length, output_length=run.output_length,
+                         actor_id=str(run.actor_id), created_at=run.created_at.isoformat()) for run in runs]}
+
+
+@endpoint(['GET','POST'])
+def entities(request):
+    from .models import EntityDefinition
+    from .entity_service import entity_data
+    if request.method == 'POST':
+        return command(request, 'entity_save')
+    s.require_admin(request.actor)
+    query(request, [])
+    return {'items':[entity_data(e) for e in EntityDefinition.objects.filter(
+        organization=request.actor.organization).order_by('code')[:100]]}
+
+
+@endpoint(['GET'])
+def entity_definition(request, id):
+    from .entity_service import get_entity, entity_data, schema_data
+    s.require_admin(request.actor)
+    query(request, [])
+    entity = get_entity(request.actor, id)
+    return {**entity_data(entity), 'history':[schema_data(v) for v in entity.schema_versions.order_by('-version')[:50]]}
+
+
+@endpoint(['POST'])
+def entity_publish(request, id):
+    return command(request, 'entity_publish', id)
+
+
+@endpoint(['GET','POST'])
+def entity_records(request, id):
+    from .models import EntityRecord
+    from .entity_service import get_entity, record_data
+    if request.method == 'POST':
+        return command(request, 'entity_record', id)
+    s.require_admin(request.actor)
+    query(request, [])
+    entity = get_entity(request.actor, id)
+    return {'items':[record_data(r) for r in EntityRecord.objects.filter(
+        organization=request.actor.organization, entity=entity).select_related('schema_version').order_by('-created_at','-id')[:50]]}

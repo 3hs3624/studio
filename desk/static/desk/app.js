@@ -5,7 +5,34 @@ document.querySelectorAll('.api-form').forEach(form => {
     const inputs = new FormData(form), kind = form.dataset.kind;
     const payload = {}, number = name => Number(inputs.get(name));
     if (form.dataset.version) payload.expected_version = Number(form.dataset.version);
-    if (kind === 'create') {
+    if (kind === 'entity-save') {
+      Object.assign(payload, {code:inputs.get('code'), name:inputs.get('name'), reason:inputs.get('reason'), fields:[]});
+      form.querySelectorAll('[data-entity-field-row]').forEach(row=>{
+        const value=key=>row.querySelector('[data-field="'+key+'"]').value;
+        const field={key:value('key'),label:value('label'),type:value('type'),required:row.querySelector('[data-field="required"]').checked};
+        if(field.type==='choice')field.options=value('options').split(',').map(v=>v.trim()).filter(Boolean);
+        if(field.type==='reference')field.target_entity_id=value('target_entity_id');
+        payload.fields.push(field);
+      });
+    } else if (kind === 'entity-publish') {
+      payload.reason=inputs.get('reason');
+    } else if (kind === 'entity-record') {
+      payload.schema_version_id=form.dataset.schema;
+      payload.values={};
+      form.querySelectorAll('[data-entity-value]').forEach(input=>{
+        if(input.value==='')return;
+        let value=input.value;
+        if(input.dataset.type==='integer')value=Number(value);
+        if(input.dataset.type==='boolean')value=value==='true';
+        payload.values[input.dataset.key]=value;
+      });
+    } else if (kind === 'plugin-configure') {
+      Object.assign(payload, {enabled:inputs.has('enabled'), reason:inputs.get('reason'),
+        manifest_digest:form.dataset.digest,
+        configuration:{trim:inputs.has('trim'), collapse_spaces:inputs.has('collapse_spaces')}});
+    } else if (kind === 'plugin-preview') {
+      Object.assign(payload, {manifest_digest:form.dataset.digest, input:{text:inputs.get('text')}});
+    } else if (kind === 'create') {
       Object.assign(payload, {title: inputs.get('title'), description: inputs.get('description'), impact: number('impact'), urgency: number('urgency')});
     } else if (kind === 'assign') {
       const [group_id, assignee_id] = inputs.get('assignment').split(':');
@@ -150,7 +177,14 @@ document.querySelectorAll('.api-form').forEach(form => {
         if (result.error?.code === 'VERSION_CONFLICT') message += ' 입력을 복사해 두신 뒤 페이지를 새로고침하십시오.';
         throw new Error(message);
       }
-      if (kind === 'create') location.assign('/portal/incidents/' + result.id);
+      if (kind === 'plugin-preview') {
+        const output = form.querySelector('[data-plugin-output]');
+        output.textContent = result.output.text;
+        output.hidden = false;
+        button.disabled = false;
+      }
+      else if (kind === 'entity-save') location.assign((form.dataset.detailBase || '/console/entities') + '/' + result.id);
+      else if (kind === 'create') location.assign('/portal/incidents/' + result.id);
       else if (kind === 'request-create') location.assign('/portal/requests/' + result.id);
       else if (kind === 'asset-create') location.assign('/assets/' + result.id);
       else if (kind === 'purchase-request') location.assign('/procurement/requisitions/' + result.id);
@@ -216,3 +250,77 @@ document.querySelectorAll('.stock-transfer-form').forEach(form=>{
     for(const asset of assets.options){asset.disabled=!serialized||asset.dataset.item!==option.dataset.item||asset.dataset.source!==option.dataset.source;asset.selected=false;}
   });
 });
+
+
+const entityFields = document.getElementById('entity-fields');
+if (entityFields) {
+  let nextField = 0;
+  function addEntityField(field = {}) {
+    if(entityFields.children.length >= 30)return;
+    const fragment = document.getElementById('entity-field-template').content.cloneNode(true);
+    const row = fragment.querySelector('[data-entity-field-row]');
+    const control = key => row.querySelector('[data-field="'+key+'"]');
+    let generatedKey;
+    do {generatedKey='field_'+(++nextField);}
+    while(Array.from(entityFields.querySelectorAll('[data-field="key"]')).some(input=>input.value===generatedKey));
+    control('key').value=field.key || generatedKey;
+    control('label').value=field.label || '';
+    control('type').value=field.type || 'text';
+    control('required').checked=field.required === true;
+    control('options').value=(field.options || []).join(', ');
+    control('target_entity_id').value=field.target_entity_id || '';
+    function updateType(){
+      row.querySelector('[data-choice-settings]').hidden=control('type').value!=='choice';
+      row.querySelector('[data-reference-settings]').hidden=control('type').value!=='reference';
+    }
+    control('type').addEventListener('change',updateType);
+    row.querySelector('[data-remove-field]').addEventListener('click',()=>row.remove());
+    updateType();
+    entityFields.appendChild(fragment);
+  }
+  const initial=JSON.parse(document.getElementById('entity-draft-fields').textContent);
+  initial.forEach(addEntityField);
+  if(!initial.length)addEntityField({key:'title',label:'제목',type:'text',required:true});
+  document.getElementById('add-entity-field').addEventListener('click',()=>addEntityField());
+}
+
+// Mobile shell navigation is shared by the portal and the operator console.
+const shellMenu = document.querySelector('.shell-menu-toggle');
+const navigationBackdrop = document.querySelector('.navigation-backdrop');
+if (shellMenu && navigationBackdrop) {
+  function closeNavigation(restoreFocus = true) {
+    document.body.classList.remove('navigation-open');
+    shellMenu.setAttribute('aria-expanded', 'false');
+    shellMenu.setAttribute('aria-label', '메뉴 열기');
+    navigationBackdrop.hidden = true;
+    if (restoreFocus) shellMenu.focus();
+  }
+  shellMenu.addEventListener('click', () => {
+    if (document.body.classList.contains('navigation-open')) {closeNavigation(); return;}
+    document.body.classList.add('navigation-open');
+    shellMenu.setAttribute('aria-expanded', 'true');
+    shellMenu.setAttribute('aria-label', '메뉴 닫기');
+    navigationBackdrop.hidden = false;
+    document.querySelector('#primary-navigation a')?.focus();
+  });
+  navigationBackdrop.addEventListener('click', () => closeNavigation());
+  document.addEventListener('keydown', event => {
+    if (!document.body.classList.contains('navigation-open')) return;
+    if (event.key === 'Escape') {closeNavigation(); return;}
+    if (event.key === 'Tab') {
+      const links = Array.from(document.querySelectorAll('#primary-navigation a[href]'))
+        .filter(link => link.getClientRects().length > 0);
+      const first = links[0], last = links[links.length - 1];
+      if (!first) return;
+      if (document.activeElement === shellMenu) {
+        event.preventDefault(); (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); shellMenu.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); shellMenu.focus();
+      }
+    }
+  });
+  document.querySelectorAll('#primary-navigation a').forEach(link => link.addEventListener('click', () => closeNavigation(false)));
+  window.matchMedia('(min-width:681px)').addEventListener('change', event => {if(event.matches)closeNavigation(false);});
+}

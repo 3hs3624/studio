@@ -175,6 +175,14 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
+    if operation.startswith('entity_'):
+        from .entity_service import authorize
+        authorize(p, operation, target)
+        return
+    if operation.startswith('plugin_'):
+        from .plugin_service import authorize
+        authorize(p, operation, target)
+        return
     if operation.startswith(('buy_','stock_')):
         from .procurement import authorize
         authorize(p,operation,target)
@@ -260,6 +268,12 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op.startswith('entity_'):
+        from .entity_service import mutate as entity_mutate
+        return entity_mutate(p, op, data, request_id, target)
+    if op.startswith('plugin_'):
+        from .plugin_service import mutate as plugin_mutate
+        return plugin_mutate(p, op, data, request_id, target)
     if op.startswith(('buy_','stock_')):
         from .procurement import mutate as mutate_procurement
         return mutate_procurement(p,op,data,request_id,target)

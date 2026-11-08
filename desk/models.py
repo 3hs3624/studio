@@ -491,3 +491,69 @@ class SecurityEvent(Base):
     request_id = models.UUIDField()
     class Meta:
         indexes = [models.Index(fields=['organization','-created_at'])]
+
+class PluginBinding(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    plugin_id = models.CharField(max_length=100)
+    plugin_version = models.CharField(max_length=30)
+    manifest_digest = models.CharField(max_length=64)
+    configuration = models.JSONField(default=dict)
+    enabled = models.BooleanField(default=False)
+    row_version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization', 'plugin_id'], name='plugin_binding_unique')]
+
+
+class PluginRun(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    binding = models.ForeignKey(PluginBinding, on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    plugin_id = models.CharField(max_length=100)
+    plugin_version = models.CharField(max_length=30)
+    manifest_digest = models.CharField(max_length=64)
+    binding_version = models.PositiveIntegerField()
+    configuration = models.JSONField()
+    input_length = models.PositiveIntegerField()
+    output_length = models.PositiveIntegerField()
+    request_id = models.UUIDField()
+
+    class Meta:
+        indexes = [models.Index(fields=['organization', '-created_at'], name='plugin_runs_org_created')]
+
+class EntityDefinition(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=200)
+    draft_fields = models.JSONField(default=list)
+    row_version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization', 'code'], name='entity_definition_code')]
+
+
+class EntitySchemaVersion(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    entity = models.ForeignKey(EntityDefinition, on_delete=models.PROTECT, related_name='schema_versions')
+    version = models.PositiveIntegerField()
+    name = models.CharField(max_length=200)
+    fields = models.JSONField()
+    schema_digest = models.CharField(max_length=64)
+    published_by = models.ForeignKey(Person, on_delete=models.PROTECT)
+    reason = models.CharField(max_length=500)
+    request_id = models.UUIDField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['entity', 'version'], name='entity_schema_version')]
+
+
+class EntityRecord(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    entity = models.ForeignKey(EntityDefinition, on_delete=models.PROTECT)
+    schema_version = models.ForeignKey(EntitySchemaVersion, on_delete=models.PROTECT)
+    values = models.JSONField()
+    created_by = models.ForeignKey(Person, on_delete=models.PROTECT)
+    request_id = models.UUIDField()
+
+    class Meta:
+        indexes = [models.Index(fields=['organization', 'entity', '-created_at'], name='entity_records_org_entity')]

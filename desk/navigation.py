@@ -20,7 +20,6 @@ def navigation(path, c):
     if key=='service':
         group('서비스 이용', [('서비스 현황','/systems/service',True),('서비스 카탈로그','/catalog',True),('내 서비스 요청','/portal/requests',True),('내 장애 요청','/portal/incidents',True),('서비스 승인함','/approvals',True)])
         group('서비스 운영',[('장애 처리','/work/incidents',c['can_work']),('서비스 요청 처리','/work/requests',c['can_work'])])
-        group('서비스 설정',[('카탈로그 관리','/work/catalog',c['is_service_manager']),('SLA · 업무 달력','/work/sla',c['is_service_manager'])])
     elif key=='asset':
         group('자산 관리',[('자산 현황','/systems/asset',True),('자산 대장','/assets',True),('내 지급 자산','/my-assets',True)])
         group('구매 · 계약',[('구매 요청 · 승인','/procurement/requisitions',c['can_purchase_request']),('발주 · 입고','/procurement/orders',c['can_stock_read']),('공급업체 · 계약','/contracts',c['can_contract_read'])])
@@ -35,6 +34,33 @@ def navigation(path, c):
         longest=max(len(link['url']) for link in active)
         for link in active: link['active']=len(link['url'])==longest
     common=[{'label':'알림함','url':'/notifications','active':key=='notifications'}]
-    if c['is_admin']: common.append({'label':'조직 · 권한 관리','url':'/admin/access','active':key=='admin'})
+    if c['is_admin'] or c['is_service_manager']:
+        common.append({'label':'운영 콘솔','url':'/console','active':False})
     system=next((s for s in SYSTEMS if s['key']==key),None)
     return {'systems':SYSTEMS,'active_area':key,'active_system':system,'area_name':system['name'] if system else {'admin':'통합 관리','notifications':'공통 알림'}.get(key,'통합 포털'),'nav_groups':groups,'common_links':common}
+
+
+LEGACY_CONSOLE_PATHS = ('/admin/', '/work/catalog', '/work/sla')
+
+
+def console_navigation(path, context):
+    groups = []
+    rows = [
+        ('업무 구성', [('엔티티 관리', '/console/entities', context['is_admin']),
+                     ('서비스 카탈로그', '/console/catalog', context['is_service_manager'])]),
+        ('플랫폼 운영', [('플러그인 관리', '/console/plugins', context['is_admin'])]),
+        ('서비스 기준', [('SLA · 업무 달력', '/console/sla', context['is_service_manager'])]),
+        ('시스템 관리', [('조직 · 권한 관리', '/console/access', context['is_admin'])]),
+    ]
+    canonical = path
+    for old, new in [('/admin/entities','/console/entities'),('/admin/plugins','/console/plugins'),
+                     ('/admin/access','/console/access'),('/work/catalog','/console/catalog'),('/work/sla','/console/sla')]:
+        if path == old or path.startswith(old+'/'):
+            canonical = new + path[len(old):]
+            break
+    for title, links in rows:
+        visible = [dict(label=label, url=url, active=canonical==url or canonical.startswith(url+'/'))
+                   for label,url,allowed in links if allowed]
+        if visible:
+            groups.append({'title':title,'links':visible})
+    return groups

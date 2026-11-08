@@ -1,0 +1,27 @@
+{% extends base_template|default:'desk/base.html' %}
+{% block title %}플러그인 관리 · 통합 IT 운영{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>플러그인 관리</h1><p class="muted">설치된 기능을 조직별로 설정하고 활성화합니다.</p></div></div>
+{% for plugin in plugins %}
+<section class="panel plugin-panel"><h2>{{ plugin.manifest.name }} <small>{{ plugin.manifest.version }}</small></h2>
+<p>{{ plugin.manifest.description }}</p>
+<p class="muted">{% if plugin.binding.enabled %}활성{% else %}비활성{% endif %} · 설정 버전 {{ plugin.version }}{% if not plugin.compatible %} · 설치본 변경 — 설정 재검증 필요{% endif %}</p>
+<form class="api-form" data-kind="plugin-configure" data-version="{{ plugin.version }}" data-digest="{{ plugin.manifest.digest }}" data-url="/api/v1/admin/plugins/{{ plugin.manifest.plugin_id }}/configuration">
+{% csrf_token %}<div class="form-error error" role="alert" tabindex="-1" hidden></div>
+<div class="checks"><label><input type="checkbox" name="trim" {% if plugin.trim %}checked{% endif %}>앞뒤 공백 제거</label>
+<label><input type="checkbox" name="collapse_spaces" {% if plugin.collapse_spaces %}checked{% endif %}>연속 공백 합치기</label>
+<label><input type="checkbox" name="enabled" {% if plugin.binding.enabled %}checked{% endif %}>활성화</label></div>
+<label>변경 사유<input name="reason" required maxlength="500"></label>
+<div class="plugin-actions"><button class="primary" type="submit">설정 저장</button></div></form>
+{% if plugin.binding.enabled and plugin.compatible %}
+<h3>기능 미리보기</h3>
+<form class="api-form" data-kind="plugin-preview" data-version="{{ plugin.version }}" data-digest="{{ plugin.manifest.digest }}" data-url="/api/v1/admin/plugins/{{ plugin.manifest.plugin_id }}/preview">
+{% csrf_token %}<div class="form-error error" role="alert" tabindex="-1" hidden></div>
+<label>입력 텍스트<textarea name="text" maxlength="4000" rows="3"></textarea></label>
+<button class="secondary" type="submit">실행</button><pre class="plugin-preview-output" data-plugin-output aria-live="polite" hidden></pre></form>
+{% endif %}</section>
+{% empty %}<section class="panel plugin-panel"><p>설치된 플러그인이 없습니다.</p></section>{% endfor %}
+<section class="panel plugin-panel"><h2>최근 미리보기 실행</h2><p class="muted">입력·출력 본문은 실행 이력에 저장하지 않습니다.</p>
+<div class="table-wrap"><table><thead><tr><th>기능</th><th>설정 버전</th><th>입력 / 출력 글자 수</th><th>실행 시각</th></tr></thead>
+<tbody>{% for run in plugin_runs %}<tr><td>{{ run.plugin_id }}</td><td>{{ run.binding_version }}</td><td>{{ run.input_length }} / {{ run.output_length }}</td><td>{{ run.created_at }}</td></tr>{% empty %}<tr><td colspan="4">실행 이력이 없습니다.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

@@ -81,3 +81,8 @@ if os.environ.get('SERVE_STATIC') == '1':
     MIDDLEWARE.insert(1,'whitenoise.middleware.WhiteNoiseMiddleware')
     STORAGES={'default':{'BACKEND':'django.core.files.storage.FileSystemStorage'},
               'staticfiles':{'BACKEND':'whitenoise.storage.CompressedStaticFilesStorage'}}
+
+# Explicit operator-facing environment identity; DEBUG=False alone does not imply production.
+STUDIO_ENVIRONMENT = os.environ.get('STUDIO_ENVIRONMENT', 'development' if DEBUG else 'unspecified')
+if STUDIO_ENVIRONMENT not in ('development', 'staging', 'production', 'unspecified'):
+    raise ImproperlyConfigured('STUDIO_ENVIRONMENT must be development, staging, production, or unspecified.')

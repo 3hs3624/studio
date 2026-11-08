@@ -41,8 +41,20 @@ def context(request):
             'can_contract_read':bool(s.roles(p)&{'PROCUREMENT_MANAGER','ASSET_MANAGER'}),
             'pending_approvals':RequestApproval.objects.filter(organization=p.organization,approver=p,status='PENDING',ticket__status='PENDING_APPROVAL').count(),
             'unread_notifications':visible_notifications(p).filter(read_at__isnull=True).count()}
-    from .navigation import navigation
+    from .navigation import navigation, console_navigation, LEGACY_CONSOLE_PATHS
+    from django.conf import settings
     c.update(navigation(request.path,c))
+    c['can_console'] = c['is_admin'] or c['is_service_manager']
+    c['console_mode'] = (request.path == '/console' or request.path.startswith('/console/')
+                         or request.path.startswith(LEGACY_CONSOLE_PATHS))
+    c['base_template'] = 'desk/console-base.html' if c['console_mode'] else 'desk/base.html'
+    c['console_groups'] = console_navigation(request.path,c) if c['can_console'] else []
+    c['console_environment_key'] = settings.STUDIO_ENVIRONMENT
+    c['console_environment_label'] = {'development':'개발 환경','staging':'검증 환경',
+        'production':'운영 환경','unspecified':'환경 미지정'}[settings.STUDIO_ENVIRONMENT]
+    c['entity_base'] = '/console/entities'
+    if c['console_mode']:
+        c.update(active_area='console', area_name='운영 콘솔')
     return c
 
 @login_required
@@ -297,3 +309,85 @@ def system_home(request,system):
     labels={'NEW':'신규','ASSIGNED':'배정','IN_PROGRESS':'처리 중','PENDING':'대기','RESOLVED':'해결','CLOSED':'종료','UNVERIFIED':'미검증','STOCK':'보관','IN_USE':'사용 중','RETIRED':'폐기','ACTIVE':'운영 중','INACTIVE':'비활성'}
     for item in c['recent_items']: item['status_label']=labels.get(item['status'],item['status'])
     return render(request,'desk/system-home.html',c)
+
+
+@login_required
+def plugin_management(request):
+    from .plugin_service import catalog
+    from .models import PluginRun
+    try:
+        c = context(request)
+        items = catalog(c['actor'])
+        for item in items:
+            binding = item['binding']
+            item['version'] = binding['version'] if binding else 0
+            item['trim'] = binding['configuration'].get('trim', True) if binding else True
+            item['collapse_spaces'] = binding['configuration'].get('collapse_spaces', True) if binding else True
+        c.update(plugins=items, plugin_runs=PluginRun.objects.filter(
+            organization=c['actor'].organization).order_by('-created_at', '-id')[:20])
+        return render(request, 'desk/plugins.html', c)
+    except s.BusinessError as exc:
+        return HttpResponse(exc.message, status=exc.status)
+
+
+@login_required
+def entity_management(request, id=None):
+    from .models import EntityDefinition, EntityRecord
+    from .entity_service import get_entity, entity_data, latest
+    from .entities.fields import FIELD_TYPES
+    try:
+        c = context(request)
+        actor = c['actor']
+        s.require_admin(actor)
+        entity = get_entity(actor, id) if id else None
+        schema = latest(entity) if entity else None
+        targets = EntityDefinition.objects.filter(organization=actor.organization, schema_versions__isnull=False).distinct().order_by('code')[:100]
+        schema_fields = []
+        if schema:
+            for field in schema.fields:
+                item = dict(field)
+                if field['type'] == 'reference':
+                    choices = EntityRecord.objects.filter(
+                        organization=actor.organization, entity_id=field['target_entity_id']).select_related('schema_version').order_by('-created_at')[:100]
+                    item['reference_choices'] = [
+                        {'id':record.id, 'label':next((str(value)[:100] for value in record.values.values()
+                                                      if isinstance(value, str) and value.strip()), str(record.id))}
+                        for record in choices]
+                schema_fields.append(item)
+        records = []
+        if entity:
+            for record in EntityRecord.objects.filter(organization=actor.organization, entity=entity).select_related('schema_version').order_by('-created_at','-id')[:20]:
+                lines = []
+                for field in record.schema_version.fields:
+                    value = record.values.get(field['key'])
+                    if field['type'] == 'reference' and value:
+                        related = EntityRecord.objects.filter(id=value, organization=actor.organization,
+                            entity_id=field['target_entity_id']).first()
+                        if related:
+                            value = next((str(v) for v in related.values.values()
+                                          if isinstance(v, str) and v.strip()), str(related.id))
+                    elif type(value) is bool:
+                        value = '예' if value else '아니오'
+                    lines.append(field['label'] + ': ' + (str(value) if value is not None else '—'))
+                records.append({'id':record.id, 'version':record.schema_version.version,
+                                'values':'\n'.join(lines), 'created_at':record.created_at})
+        c.update(entity=entity, entity_info=entity_data(entity) if entity else None,
+                 draft_fields=entity.draft_fields if entity else [], schema=schema,
+                 schema_fields=schema_fields, records=records, targets=targets,
+                 field_types=[{'key':key,'label':value[0]} for key,value in FIELD_TYPES.items()],
+                 entity_list=EntityDefinition.objects.filter(organization=actor.organization).order_by('code')[:100],
+                 history=entity.schema_versions.order_by('-version')[:20] if entity else [])
+        return render(request, 'desk/entities.html', c)
+    except s.BusinessError as exc:
+        return HttpResponse(exc.message, status=exc.status)
+
+
+@login_required
+def console_home(request):
+    try:
+        c = context(request)
+        if not c['can_console']:
+            s.fail('FORBIDDEN', '운영 콘솔 접근 권한이 없습니다.', 403)
+        return render(request, 'desk/console-home.html', c)
+    except s.BusinessError as exc:
+        return HttpResponse(exc.message, status=exc.status)
