@@ -9,3 +9,8 @@ work/
 test-results/
 
 deploy/access/
+
+deploy/local_split/.env.*
+deploy/local_split/access/
+deploy/local_split/backups/
+deploy/local_split/local-root.crt

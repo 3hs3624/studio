@@ -12,3 +12,10 @@ deploy/*
 !manage.py
 **/__pycache__
 **/*.pyc
+!deploy/local_split/
+!deploy/local_split/Dockerfile
+!deploy/local_split/start.py
+deploy/local_split/.env.*
+deploy/local_split/access/
+deploy/local_split/backups/
+deploy/local_split/local-root.crt

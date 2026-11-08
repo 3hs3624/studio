@@ -1,0 +1,80 @@
+name: ${STACK_NAME:-itsm-local}-ap
+x-app: &app
+  image: ${APP_IMAGE:-itsm-local-app:dev}
+  build:
+    context: ../..
+    dockerfile: deploy/local_split/Dockerfile
+    args:
+      APP_UID: ${APP_UID:-1000}
+      APP_GID: ${APP_GID:-1000}
+    secrets: [proxy_ca]
+  environment: &app-environment
+    DEBUG: '0'
+    AUTH_MODE: local
+    DATABASE_URL: ''
+    NEON_MIGRATION_TARGET_URL: ''
+    DB_ENGINE: postgresql
+    DB_NAME: itsm_local
+    DB_USER: itsm_runtime
+    DB_PASSWORD: ${DB_PASSWORD:?Run configure first}
+    DB_HOST: local-db
+    DB_PORT: '5432'
+    SECRET_KEY: ${SECRET_KEY:?Run configure first}
+    APP_HOST: ${APP_HOST:-localhost}
+    ALLOWED_HOSTS: ${APP_HOST:-localhost}
+    CSRF_TRUSTED_ORIGINS: https://${APP_HOST:-localhost}:${HTTPS_PORT:-18443}
+    SERVE_STATIC: '1'
+    TRUST_PROXY_HEADERS: '1'
+    STUDIO_ENVIRONMENT: development
+  networks: [backend]
+services:
+  initialize:
+    <<: *app
+    restart: 'no'
+    environment:
+      <<: *app-environment
+      DB_USER: itsm_migrator
+      DB_PASSWORD: ${MIGRATION_PASSWORD:?Run configure first}
+    command: [python, deploy/local_split/start.py, initialize]
+    volumes: ['./access:/run/local-access']
+  web:
+    <<: *app
+    restart: unless-stopped
+    command: [python, deploy/local_split/start.py, web]
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, deploy/local_split/start.py, health]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_HOST: ${APP_HOST:-localhost}
+      EXTERNAL_HTTPS_PORT: ${HTTPS_PORT:-18443}
+      NO_PROXY: web,localhost,127.0.0.1
+      no_proxy: web,localhost,127.0.0.1
+    ports:
+      - '127.0.0.1:${HTTP_PORT:-18080}:80'
+      - '127.0.0.1:${HTTPS_PORT:-18443}:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls_data:/data
+      - tls_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [backend]
+volumes:
+  tls_data:
+  tls_config:
+networks:
+  backend:
+    external: true
+    name: ${STACK_NAME:-itsm-local}-backend
+secrets:
+  proxy_ca:
+    file: ${BUILD_CA_FILE:-./build-ca.pem}
