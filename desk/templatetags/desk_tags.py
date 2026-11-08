@@ -27,7 +27,7 @@ def asset_label(value):
 
 @register.filter
 def role_label(value):
-    return {'SERVICE_MANAGER':'서비스 관리자','AGENT':'처리 담당자','ORG_ADMIN':'조직 관리자',
+    return {'SERVICE_MANAGER':'서비스 관리자','AGENT':'처리 담당자','ORG_ADMIN':'시스템 관리자','DEVELOPER':'개발자','SOLUTION_OPERATOR':'솔루션 운영자',
             'RESOURCE_READER':'자산·구성 조회','ASSET_MANAGER':'자산 관리자','PROCUREMENT_MANAGER':'구매 관리자','STOCK_MANAGER':'재고 관리자'}.get(value,value)
 
 @register.filter

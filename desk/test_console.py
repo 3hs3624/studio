@@ -28,7 +28,7 @@ class ConsoleTests(Fixtures, TestCase):
         self.assertContains(response,'href="/console/plugins"')
         self.assertNotContains(response,'href="/work/incidents"')
         self.assertNotContains(response,'href="/console/catalog"')
-        self.assertContains(response,'target="_blank" rel="noopener"')
+        self.assertContains(self.client.get('/'),'target="_blank" rel="noopener noreferrer"')
         self.assertEqual(response.context['active_area'],'console')
         portal=self.client.get('/systems/service')
         self.assertContains(portal,'aria-label="시스템 전환"')
@@ -41,6 +41,7 @@ class ConsoleTests(Fixtures, TestCase):
             self.assertEqual(self.client.get(path).status_code,200,path)
         for path in ['/console/catalog','/console/sla']:
             self.assertEqual(self.client.get(path).status_code,403,path)
+        RoleGrant.objects.create(organization=self.org,person=self.manager,role='SOLUTION_OPERATOR')
         self.client.force_login(self.manager.user)
         response=self.client.get('/console')
         self.assertEqual(response.status_code,200)
@@ -49,8 +50,9 @@ class ConsoleTests(Fixtures, TestCase):
         self.assertNotContains(response,'href="/console/access"')
         for path in ['/console/catalog','/console/sla']:
             self.assertEqual(self.client.get(path).status_code,200,path)
-        for path in ['/console/access','/console/plugins','/console/entities']:
-            self.assertEqual(self.client.get(path).status_code,403,path)
+        self.assertEqual(self.client.get('/console/access').status_code,403)
+        for path in ['/console/plugins','/console/entities']:
+            self.assertEqual(self.client.get(path).status_code,200,path)
 
     def test_combined_roles_get_combined_console_features(self):
         RoleGrant.objects.create(organization=self.org,person=self.admin,role='SERVICE_MANAGER')
@@ -68,6 +70,7 @@ class ConsoleTests(Fixtures, TestCase):
             self.assertTrue(response.context['console_mode'])
             selected=[link['url'] for group in response.context['console_groups'] for link in group['links'] if link['active']]
             self.assertEqual(selected,[url])
+        RoleGrant.objects.create(organization=self.org,person=self.manager,role='SOLUTION_OPERATOR')
         self.client.force_login(self.manager.user)
         for path in ['/work/catalog','/work/sla']:
             response=self.client.get(path)
@@ -98,3 +101,28 @@ class ConsoleTests(Fixtures, TestCase):
     def test_unspecified_environment_is_not_mislabeled_production(self):
         self.client.force_login(self.admin.user)
         self.assertContains(self.client.get('/console'),'환경 미지정')
+
+
+    def test_service_manager_without_console_role_has_no_entry_or_direct_access(self):
+        self.client.force_login(self.manager.user)
+        response=self.client.get('/')
+        self.assertNotContains(response, 'class="mode-switch"')
+        for path in ['/console','/console/entities','/console/plugins','/console/catalog','/console/sla','/work/catalog','/work/sla']:
+            self.assertEqual(self.client.get(path).status_code,403,path)
+
+    def test_console_roles_open_in_new_tab_without_sidebar_shortcuts(self):
+        for role in ['DEVELOPER','SOLUTION_OPERATOR']:
+            RoleGrant.objects.filter(person=self.peer).delete()
+            RoleGrant.objects.create(organization=self.org,person=self.peer,role=role)
+            self.client.force_login(self.peer.user)
+            response=self.client.get('/')
+            self.assertContains(response, 'class="mode-switch" href="/console" target="_blank" rel="noopener noreferrer"')
+            common_urls=[link['url'] for link in response.context['common_links']]
+            self.assertNotIn('/console',common_urls)
+            console=self.client.get('/console')
+            self.assertEqual(console.status_code,200)
+            self.assertNotContains(console,'class="portal-link"')
+            for path in ['/console/entities','/console/plugins','/api/v1/admin/entities','/api/v1/admin/plugins']:
+                self.assertEqual(self.client.get(path).status_code,200,path)
+            self.assertEqual(self.client.get('/console/access').status_code,403)
+            self.assertEqual(self.client.get('/api/v1/admin/access').status_code,403)

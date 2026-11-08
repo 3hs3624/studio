@@ -44,7 +44,7 @@ def context(request):
     from .navigation import navigation, console_navigation, LEGACY_CONSOLE_PATHS
     from django.conf import settings
     c.update(navigation(request.path,c))
-    c['can_console'] = c['is_admin'] or c['is_service_manager']
+    c['can_console'] = s.can_console(p)
     c['console_mode'] = (request.path == '/console' or request.path.startswith('/console/')
                          or request.path.startswith(LEGACY_CONSOLE_PATHS))
     c['base_template'] = 'desk/console-base.html' if c['console_mode'] else 'desk/base.html'
@@ -54,6 +54,7 @@ def context(request):
         'production':'운영 환경','unspecified':'환경 미지정'}[settings.STUDIO_ENVIRONMENT]
     c['entity_base'] = '/console/entities'
     if c['console_mode']:
+        s.require_console(p)
         c.update(active_area='console', area_name='운영 콘솔')
     return c
 
@@ -338,7 +339,7 @@ def entity_management(request, id=None):
     try:
         c = context(request)
         actor = c['actor']
-        s.require_admin(actor)
+        s.require_console(actor)
         entity = get_entity(actor, id) if id else None
         schema = latest(entity) if entity else None
         targets = EntityDefinition.objects.filter(organization=actor.organization, schema_versions__isnull=False).distinct().order_by('code')[:100]

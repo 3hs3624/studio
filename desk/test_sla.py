@@ -247,6 +247,7 @@ class SLATests(Fixtures,TestCase):
         self.assertEqual(SLAInstance.objects.get(ticket=t).response_elapsed_us,0)
 
     def test_html_views_and_policy_snapshot_on_ticket(self):
+        RoleGrant.objects.create(organization=self.org,person=self.manager,role='SOLUTION_OPERATOR')
         t=self.create()
         self.client.force_login(self.manager.user)
         for path in ('/work/sla','/notifications',f'/work/incidents/{t.id}','/work/incidents'):

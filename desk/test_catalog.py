@@ -232,6 +232,7 @@ class CatalogTests(CatalogFixtures,TestCase):
             Ticket.objects.filter(id=r['id']).update(status='NEW')
 
     def test_html_pages_and_resubmission_prefill(self):
+        RoleGrant.objects.create(organization=self.org,person=self.manager,role='SOLUTION_OPERATOR')
         r=self.decision(self.submit(),'REJECT')
         for actor,paths in [(self.employee,['/catalog','/catalog/items/'+self.item_id,'/portal/requests','/portal/requests/'+r['id'],
                  '/catalog/items/'+self.item_id+'?resubmission_of='+r['id']]),

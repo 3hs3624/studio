@@ -18,7 +18,7 @@ def binding_data(binding):
 
 
 def catalog(actor):
-    s.require_admin(actor)
+    s.require_console(actor)
     bindings = {b.plugin_id: b for b in PluginBinding.objects.filter(organization=actor.organization)}
     items = []
     for plugin in REGISTRY.values():
@@ -47,7 +47,7 @@ def require_active(actor, plugin_id, trail=()):
 
 
 def authorize(actor, operation, plugin_id):
-    s.require_admin(actor)
+    s.require_console(actor)
     definition(plugin_id)
     if operation == 'plugin_preview':
         require_active(actor, plugin_id)

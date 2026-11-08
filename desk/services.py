@@ -30,6 +30,15 @@ def roles(p):
 def manager(p):
     return 'SERVICE_MANAGER' in roles(p)
 
+def can_console(p):
+    return bool(roles(p) & {'ORG_ADMIN', 'DEVELOPER', 'SOLUTION_OPERATOR'})
+
+
+def require_console(p):
+    if not can_console(p):
+        fail('FORBIDDEN', '개발자·솔루션 운영자·시스템 관리자 권한이 필요합니다.', 403)
+
+
 def require_admin(p):
     if 'ORG_ADMIN' not in roles(p):
         fail('FORBIDDEN', '조직 관리자 권한이 필요합니다.', 403)

@@ -34,8 +34,6 @@ def navigation(path, c):
         longest=max(len(link['url']) for link in active)
         for link in active: link['active']=len(link['url'])==longest
     common=[{'label':'알림함','url':'/notifications','active':key=='notifications'}]
-    if c['is_admin'] or c['is_service_manager']:
-        common.append({'label':'운영 콘솔','url':'/console','active':False})
     system=next((s for s in SYSTEMS if s['key']==key),None)
     return {'systems':SYSTEMS,'active_area':key,'active_system':system,'area_name':system['name'] if system else {'admin':'통합 관리','notifications':'공통 알림'}.get(key,'통합 포털'),'nav_groups':groups,'common_links':common}
 
@@ -45,10 +43,11 @@ LEGACY_CONSOLE_PATHS = ('/admin/', '/work/catalog', '/work/sla')
 
 def console_navigation(path, context):
     groups = []
+    can_configure = bool(context['roles'] & {'ORG_ADMIN','DEVELOPER','SOLUTION_OPERATOR'})
     rows = [
-        ('업무 구성', [('엔티티 관리', '/console/entities', context['is_admin']),
+        ('업무 구성', [('엔티티 관리', '/console/entities', can_configure),
                      ('서비스 카탈로그', '/console/catalog', context['is_service_manager'])]),
-        ('플랫폼 운영', [('플러그인 관리', '/console/plugins', context['is_admin'])]),
+        ('플랫폼 운영', [('플러그인 관리', '/console/plugins', can_configure)]),
         ('서비스 기준', [('SLA · 업무 달력', '/console/sla', context['is_service_manager'])]),
         ('시스템 관리', [('조직 · 권한 관리', '/console/access', context['is_admin'])]),
     ]

@@ -409,7 +409,7 @@ def plugin_preview(request, plugin_id):
 @endpoint(['GET'])
 def plugin_runs(request):
     from .models import PluginRun
-    s.require_admin(request.actor)
+    s.require_console(request.actor)
     query(request, [])
     runs = PluginRun.objects.filter(organization=request.actor.organization).order_by('-created_at', '-id')[:50]
     return {'items':[dict(id=str(run.id), plugin_id=run.plugin_id, plugin_version=run.plugin_version,
@@ -424,7 +424,7 @@ def entities(request):
     from .entity_service import entity_data
     if request.method == 'POST':
         return command(request, 'entity_save')
-    s.require_admin(request.actor)
+    s.require_console(request.actor)
     query(request, [])
     return {'items':[entity_data(e) for e in EntityDefinition.objects.filter(
         organization=request.actor.organization).order_by('code')[:100]]}
@@ -433,7 +433,7 @@ def entities(request):
 @endpoint(['GET'])
 def entity_definition(request, id):
     from .entity_service import get_entity, entity_data, schema_data
-    s.require_admin(request.actor)
+    s.require_console(request.actor)
     query(request, [])
     entity = get_entity(request.actor, id)
     return {**entity_data(entity), 'history':[schema_data(v) for v in entity.schema_versions.order_by('-version')[:50]]}
@@ -450,7 +450,7 @@ def entity_records(request, id):
     from .entity_service import get_entity, record_data
     if request.method == 'POST':
         return command(request, 'entity_record', id)
-    s.require_admin(request.actor)
+    s.require_console(request.actor)
     query(request, [])
     entity = get_entity(request.actor, id)
     return {'items':[record_data(r) for r in EntityRecord.objects.filter(

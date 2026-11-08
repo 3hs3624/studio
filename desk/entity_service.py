@@ -73,7 +73,7 @@ def record_data(record):
 
 
 def authorize(actor, operation, target):
-    s.require_admin(actor)
+    s.require_console(actor)
     if operation not in ('entity_save', 'entity_publish', 'entity_record'):
         s.fail('INVALID_OPERATION', '허용되지 않은 엔티티 작업입니다.')
     if operation != 'entity_save':
