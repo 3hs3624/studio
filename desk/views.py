@@ -141,6 +141,13 @@ def admin_access(request):
         for p in Person.objects.filter(organization=c['org']).order_by('display_name'):
             people.append({'person':p,'roles':[{'name':r,'checked':r in s.roles(p)} for r in ROLES]})
         from .models import SecurityEvent
+        tab = request.GET.get('tab','users')
+        labels = [('users','사용자'),('roles','역할·권한'),('groups','담당 그룹'),('accounts','계정·세션'),('history','변경 이력')]
+        if tab not in dict(labels):
+            s.fail('NOT_FOUND','탭을 찾을 수 없습니다.',404)
+        from .models import AuditEvent
+        c.update(active_tab=tab, tabs=[dict(key=key,label=label,url='/console/access?tab='+key) for key,label in labels],
+                 access_changes=AuditEvent.objects.filter(organization=c['org'],action__in=['ROLES_CHANGED','MEMBERSHIP_CHANGED','ACCOUNT_CHANGED','SESSIONS_REVOKED']).select_related('actor').order_by('-created_at')[:50])
         c.update(people=people,groups=Group.objects.filter(organization=c['org']),
                  security_events=SecurityEvent.objects.filter(organization=c['org']).select_related('person').order_by('-created_at')[:50])
         c['memberships']=[{'group':g,'people':[{'person':item['person'],
@@ -313,19 +320,50 @@ def system_home(request,system):
 
 
 @login_required
-def plugin_management(request):
-    from .plugin_service import catalog
-    from .models import PluginRun
+def plugin_management(request, plugin_id=None):
+    from .plugin_service import catalog, definition
+    from .models import PluginRun, NumberIssue, PluginFailure, AuditEvent
     try:
         c = context(request)
         items = catalog(c['actor'])
         for item in items:
-            binding = item['binding']
-            item['version'] = binding['version'] if binding else 0
-            item['trim'] = binding['configuration'].get('trim', True) if binding else True
-            item['collapse_spaces'] = binding['configuration'].get('collapse_spaces', True) if binding else True
-        c.update(plugins=items, plugin_runs=PluginRun.objects.filter(
-            organization=c['actor'].organization).order_by('-created_at', '-id')[:20])
+            item['last_run'] = PluginRun.objects.filter(organization=c['org'],plugin_id=item['manifest']['plugin_id']).order_by('-created_at').first()
+        tab = request.GET.get('tab', 'overview')
+        tabs = [('overview','개요'),('settings','설정'),('test','실행 테스트'),('runs','실행 이력'),('changes','변경 이력')]
+        if tab not in dict(tabs):
+            s.fail('NOT_FOUND','탭을 찾을 수 없습니다.',404)
+        selected = None
+        if plugin_id:
+            definition(plugin_id)
+            selected = next(item for item in items if item['manifest']['plugin_id']==plugin_id)
+            binding = selected['binding']
+            configuration = binding['configuration'] if binding else {}
+            selected['version'] = binding['version'] if binding else 0
+            labels = {'reset':{'never':'초기화 없음','year':'연별','month':'월별','day':'일별'}, 'date_format':{'NONE':'날짜 없음'}, 'separator':{'':'없음'}}
+            selected['settings'] = [{**field,'value':configuration.get(field['key'],field.get('default','')),
+                'choices':[dict(value=option,label=labels.get(field['key'],{}).get(option,option)) for option in field.get('options',[])]}
+                for field in selected['manifest']['settings_fields']]
+        runs = PluginRun.objects.filter(organization=c['org']).select_related('actor')
+        if plugin_id:
+            runs = runs.filter(plugin_id=plugin_id)
+        events = []
+        for run in runs.order_by('-created_at','-id')[:50]:
+            issue = NumberIssue.objects.filter(run=run).first()
+            events.append(dict(created_at=run.created_at, actor=run.actor.display_name,
+                operation='실제 발급' if issue else '미리보기', status='성공', detail=issue.value if issue else f'{run.input_length} / {run.output_length} 글자', version=run.binding_version))
+        failures = PluginFailure.objects.filter(organization=c['org']).select_related('actor','binding')
+        if plugin_id:
+            failures = failures.filter(binding__plugin_id=plugin_id)
+        events += [dict(created_at=f.created_at,actor=f.actor.display_name, operation='실제 발급' if f.operation=='plugin_issue' else '미리보기',status='실패',detail=f.error_code,version=f.binding_version) for f in failures.order_by('-created_at')[:50]]
+        changes = AuditEvent.objects.filter(organization=c['org'],action='PLUGIN_CONFIGURED')
+        if selected and selected['binding']:
+            changes = changes.filter(entity_id=selected['binding']['id'])
+        elif plugin_id:
+            changes = changes.none()
+        c.update(plugins=items, plugin=selected, active_tab=tab,
+                 tabs=[dict(key=key,label=label,url=f'/console/plugins/{plugin_id}?tab={key}') for key,label in tabs],
+                 plugin_events=sorted(events,key=lambda e:e['created_at'],reverse=True)[:50],
+                 plugin_changes=changes.select_related('actor').order_by('-created_at')[:50])
         return render(request, 'desk/plugins.html', c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message, status=exc.status)
@@ -348,6 +386,12 @@ def entity_management(request, id=None):
         if schema:
             for field in schema.fields:
                 item = dict(field)
+                if field['type']=='choice':
+                    if field.get('code_group_id'):
+                        from .models import CommonCodeItem
+                        item['choice_options'] = [dict(value=code.code,label=code.label) for code in CommonCodeItem.objects.filter(organization=actor.organization,group_id=field['code_group_id'],group__active=True,active=True)]
+                    else:
+                        item['choice_options'] = [dict(value=value,label=value) for value in field['options']]
                 if field['type'] == 'reference':
                     item['multiple'] = multiple(field)
                     choices = EntityRecord.objects.filter(
@@ -374,6 +418,10 @@ def entity_management(request, id=None):
                         if related:
                             value = next((str(v) for v in related.values.values()
                                           if isinstance(v, str) and v.strip()), str(related.id))
+                    elif field['type']=='choice' and field.get('code_group_id') and value:
+                        from .models import CommonCodeItem
+                        label = CommonCodeItem.objects.filter(organization=actor.organization,group_id=field['code_group_id'],code=value).first()
+                        value = label.label if label else value
                     elif type(value) is bool:
                         value = '예' if value else '아니오'
                     lines.append(field['label'] + ': ' + (str(value) if value is not None else '—'))
@@ -383,7 +431,9 @@ def entity_management(request, id=None):
                                 'updated_by':record.updated_by.display_name, 'row_version':record.row_version,
                                 'links': [dict(direction='→', field=link.field_key, label=next((str(v)[:100] for v in link.target.values.values() if isinstance(v, str) and v.strip()), str(link.target_id))) for link in record.outgoing_links.select_related('target')]
                                 + [dict(direction='←', field=link.field_key, label=next((str(v)[:100] for v in link.source.values.values() if isinstance(v, str) and v.strip()), str(link.source_id))) for link in record.incoming_links.select_related('source')]})
-        c.update(show_editor=bool(entity or request.GET.get('new') == '1'), system_fields=system_fields(),
+        from .models import CommonCodeGroup
+        c.update(code_groups=CommonCodeGroup.objects.filter(organization=actor.organization).order_by('code'),
+                 show_editor=bool(entity or request.GET.get('new') == '1'), system_fields=system_fields(),
                  relationships=[{'key':key, 'label':label} for key,label in RELATIONSHIPS.items()],
                  entity=entity, entity_info=entity_data(entity) if entity else None,
                  draft_fields=entity.draft_fields if entity else [], schema=schema,
@@ -405,3 +455,20 @@ def console_home(request):
         return render(request, 'desk/console-home.html', c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message, status=exc.status)
+
+
+@login_required
+def common_code_management(request, id=None):
+    from .common_codes import group, data, uses
+    from .models import CommonCodeGroup, AuditEvent
+    try:
+        c = context(request)
+        s.require_console(c['actor'])
+        value = group(c['actor'], id) if id else None
+        c.update(code_groups=CommonCodeGroup.objects.filter(organization=c['org']).order_by('code'),
+                 code_group=value, code_data=data(value) if value else None,
+                 code_usage=uses(c['actor'], value) if value else [],
+                 code_changes=AuditEvent.objects.filter(organization=c['org'],action='COMMON_CODE_CHANGED',entity_id=id).select_related('actor').order_by('-created_at')[:30] if id else [])
+        return render(request, 'desk/codes.html', c)
+    except s.BusinessError as exc:
+        return HttpResponse(exc.message,status=exc.status)

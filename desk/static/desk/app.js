@@ -5,12 +5,20 @@ document.querySelectorAll('.api-form').forEach(form => {
     const inputs = new FormData(form), kind = form.dataset.kind;
     const payload = {}, number = name => Number(inputs.get(name));
     if (form.dataset.version) payload.expected_version = Number(form.dataset.version);
-    if (kind === 'entity-save') {
+    if (kind === 'code-group') {
+      Object.assign(payload,{code:inputs.get('code'),name:inputs.get('name'),description:inputs.get('description'),active:inputs.has('active'),reason:inputs.get('reason')});
+    } else if(kind === 'code-items') {
+      payload.reason=inputs.get('reason');
+      payload.items=Array.from(form.querySelectorAll('[data-code-item]')).map(row=>{
+        const get=key=>row.querySelector('[data-code="'+key+'"]');
+        return {code:get('code').value,label:get('label').value,description:get('description').value,sort_order:Number(get('sort_order').value),active:get('active').checked};
+      });
+    } else if (kind === 'entity-save') {
       Object.assign(payload, {code:inputs.get('code'), name:inputs.get('name'), reason:inputs.get('reason'), fields:[]});
       form.querySelectorAll('[data-entity-field-row]').forEach(row=>{
         const value=key=>row.querySelector('[data-field="'+key+'"]').value;
         const field={key:value('key'),label:value('label'),type:value('type'),required:row.querySelector('[data-field="required"]').checked};
-        if(field.type==='choice')field.options=value('options').split(',').map(v=>v.trim()).filter(Boolean);
+        if(field.type==='choice'){if(value('code_group_id'))field.code_group_id=value('code_group_id');else field.options=value('options').split(',').map(v=>v.trim()).filter(Boolean);}
         if(field.type==='reference'){field.target_entity_id=value('target_entity_id');field.relationship=value('relationship');}
         payload.fields.push(field);
       });
@@ -21,18 +29,21 @@ document.querySelectorAll('.api-form').forEach(form => {
       payload.schema_version_id=form.dataset.schema;
       payload.values={};
       form.querySelectorAll('[data-entity-value]').forEach(input=>{
-        if(input.value==='')return;
         let value=input.multiple?Array.from(input.selectedOptions).map(option=>option.value).filter(Boolean):input.value;
+        if(value==='' || (Array.isArray(value) && !value.length))return;
         if(input.dataset.type==='integer')value=Number(value);
         if(input.dataset.type==='boolean')value=value==='true';
         payload.values[input.dataset.key]=value;
       });
     } else if (kind === 'plugin-configure') {
-      Object.assign(payload, {enabled:inputs.has('enabled'), reason:inputs.get('reason'),
-        manifest_digest:form.dataset.digest,
-        configuration:{trim:inputs.has('trim'), collapse_spaces:inputs.has('collapse_spaces')}});
-    } else if (kind === 'plugin-preview') {
-      Object.assign(payload, {manifest_digest:form.dataset.digest, input:{text:inputs.get('text')}});
+      const configuration={};
+      form.querySelectorAll('[data-plugin-setting]').forEach(input=>{
+        configuration[input.dataset.pluginSetting]=input.dataset.settingType==='boolean'?input.checked:input.dataset.settingType==='integer'?Number(input.value):input.value;
+      });
+      Object.assign(payload,{enabled:inputs.has('enabled'),reason:inputs.get('reason'),manifest_digest:form.dataset.digest,configuration});
+    } else if (kind === 'plugin-preview' || kind === 'plugin-issue') {
+      const data={};form.querySelectorAll('[data-plugin-input]').forEach(input=>{data[input.dataset.pluginInput]=input.value;});
+      Object.assign(payload,{manifest_digest:form.dataset.digest,input:data});
     } else if (kind === 'create') {
       Object.assign(payload, {title: inputs.get('title'), description: inputs.get('description'), impact: number('impact'), urgency: number('urgency')});
     } else if (kind === 'assign') {
@@ -43,12 +54,12 @@ document.querySelectorAll('.api-form').forEach(form => {
     } else if (kind === 'comment') {
       Object.assign(payload, {body: inputs.get('body'), visibility: inputs.get('visibility')});
     } else if (kind === 'roles') {
-      payload.roles = inputs.getAll('roles');
+      payload.roles = inputs.getAll('roles');payload.reason=inputs.get('reason');
     } else if (kind === 'account' || kind === 'revoke-sessions') {
       payload.reason=inputs.get('reason');
       if (kind === 'account') payload.active=inputs.get('active')==='true';
     } else if (kind === 'membership') {
-      payload.active = inputs.get('active') === 'on';
+      payload.active = inputs.get('active') === 'on';payload.reason=inputs.get('reason');
     } else if (kind === 'sla-calendar') {
       Object.assign(payload, {name: inputs.get('name'), timezone: inputs.get('timezone'),
         weekdays:inputs.getAll('weekdays').map(Number), starts_at:inputs.get('starts_at'), ends_at:inputs.get('ends_at'),
@@ -159,7 +170,7 @@ document.querySelectorAll('.api-form').forEach(form => {
       else Object.assign(payload, {resource_type, resource_id});
     }
     const serialized = JSON.stringify(payload);
-    if (form.dataset.payload !== serialized) {
+    if (kind === 'plugin-preview' || form.dataset.payload !== serialized) {
       form.dataset.payload = serialized;
       form.dataset.key = crypto.randomUUID();
     }
@@ -179,12 +190,15 @@ document.querySelectorAll('.api-form').forEach(form => {
         if (result.error?.code === 'VERSION_CONFLICT') message += ' 입력을 복사해 두신 뒤 페이지를 새로고침하십시오.';
         throw new Error(message);
       }
-      if (kind === 'plugin-preview') {
+      document.dispatchEvent(new CustomEvent('configuration-saved',{detail:form}));
+      if (kind === 'plugin-preview' || kind === 'plugin-issue') {
         const output = form.querySelector('[data-plugin-output]');
-        output.textContent = result.output.text;
+        output.textContent = typeof result.output.text==='string'?result.output.text:JSON.stringify(result.output,null,2);
+        if(kind==='plugin-issue')button.textContent='발급 결과 다시 확인';
         output.hidden = false;
         button.disabled = false;
       }
+      else if (kind === 'code-group') location.assign('/console/codes/'+result.id);
       else if (kind === 'entity-save') location.assign((form.dataset.detailBase || '/console/entities') + '/' + result.id);
       else if (kind === 'create') location.assign('/portal/incidents/' + result.id);
       else if (kind === 'request-create') location.assign('/portal/requests/' + result.id);
@@ -270,13 +284,16 @@ if (entityFields) {
     control('type').value=field.type || 'text';
     control('required').checked=field.required === true;
     control('options').value=(field.options || []).join(', ');
+    control('code_group_id').value=field.code_group_id || '';
     control('target_entity_id').value=field.target_entity_id || '';
     control('relationship').value=field.relationship || 'many_to_one';
     function updateType(){
-      control('options').disabled=control('type').value!=='choice';
+      control('code_group_id').disabled=control('type').value!=='choice';
+      control('options').disabled=control('type').value!=='choice' || !!control('code_group_id').value;
       row.querySelectorAll('[data-reference-settings]').forEach(input=>{input.disabled=control('type').value!=='reference';});
     }
     control('type').addEventListener('change',updateType);
+    control('code_group_id').addEventListener('change',updateType);
     row.querySelector('[data-remove-field]').addEventListener('click',()=>row.remove());
     row.querySelectorAll('[data-move-field]').forEach(button=>button.addEventListener('click',()=>{
       if(button.dataset.moveField==='-1' && row.previousElementSibling)row.previousElementSibling.before(row);
@@ -331,3 +348,24 @@ if (shellMenu && navigationBackdrop) {
   document.querySelectorAll('#primary-navigation a').forEach(link => link.addEventListener('click', () => closeNavigation(false)));
   window.matchMedia('(min-width:681px)').addEventListener('change', event => {if(event.matches)closeNavigation(false);});
 }
+
+
+// Full-page tab links preserve their address; warn before discarding edited forms.
+const dirtyConfigurationForms=new Set();
+document.addEventListener('input',event=>{const form=event.target.closest('form[data-track-changes]');if(form)dirtyConfigurationForms.add(form);});
+document.addEventListener('change',event=>{const form=event.target.closest('form[data-track-changes]');if(form)dirtyConfigurationForms.add(form);});
+document.addEventListener('configuration-saved',event=>dirtyConfigurationForms.delete(event.detail));
+window.addEventListener('beforeunload',event=>{if(dirtyConfigurationForms.size){event.preventDefault();event.returnValue='';}});
+document.querySelectorAll('[data-new-plugin-issue]').forEach(button=>button.addEventListener('click',()=>{
+  const form=button.closest('form');delete form.dataset.key;delete form.dataset.payload;
+  form.querySelector('[data-plugin-output]').hidden=true;
+  form.querySelector('button[type=submit]').textContent='실제 발급';
+}));
+const addCommonCode=document.getElementById('add-common-code');
+if(addCommonCode)addCommonCode.addEventListener('click',()=>{
+  const rows=document.getElementById('common-code-items');if(rows.children.length>=100)return;
+  const fragment=document.getElementById('common-code-template').content.cloneNode(true);
+  rows.appendChild(fragment);dirtyConfigurationForms.add(rows.closest('form'));
+});
+
+document.addEventListener('click',event=>{const button=event.target.closest('[data-remove-code-row]');if(button){const form=button.closest('form');button.closest('[data-code-item]').remove();dirtyConfigurationForms.add(form);}});

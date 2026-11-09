@@ -1,6 +1,9 @@
 """Organization-scoped configuration and preview commands through the common executor."""
 from . import services as s
-from .models import PluginBinding, PluginRun
+from .models import PluginBinding, PluginRun, NumberSequence, NumberIssue
+from django.utils import timezone
+from hashlib import sha256
+import json
 from .plugins.bundled import REGISTRY
 
 
@@ -49,7 +52,7 @@ def require_active(actor, plugin_id, trail=()):
 def authorize(actor, operation, plugin_id):
     s.require_console(actor)
     definition(plugin_id)
-    if operation == 'plugin_preview':
+    if operation in ('plugin_preview', 'plugin_issue'):
         require_active(actor, plugin_id)
     elif operation != 'plugin_configure':
         s.fail('INVALID_OPERATION', '허용되지 않은 플러그인 작업입니다.')
@@ -92,7 +95,7 @@ def configure(actor, payload, request_id, plugin_id):
     return result, 200
 
 
-def preview(actor, payload, request_id, plugin_id):
+def preview(actor, payload, request_id, plugin_id, issue=False):
     s.check_fields(payload, ['expected_version', 'manifest_digest', 'input'],
                    ['expected_version', 'manifest_digest', 'input'])
     plugin, binding = require_active(actor, plugin_id)
@@ -104,20 +107,45 @@ def preview(actor, payload, request_id, plugin_id):
         s.fail('INVALID_PLUGIN_INPUT', '입력은 JSON 객체여야 합니다.')
     # Validate stored configuration again; ORM bypasses must not execute unchecked settings.
     configuration = plugin.validate_configuration(binding.configuration)
-    result = plugin.execute(payload['input'], configuration)
+    sequence = None
+    if issue and 'plugin.issue' not in plugin.capabilities:
+        s.fail('INVALID_OPERATION', '실제 발급을 지원하는 플러그인이 아닙니다.')
+    if plugin.kind == 'numbering':
+        s.check_fields(payload['input'], [], [])
+        day = timezone.localdate()
+        pattern = {'never':'','year':'%Y','month':'%Y%m','day':'%Y%m%d'}[configuration['reset']]
+        period = day.strftime(pattern) if pattern else 'all'
+        namespace = sha256(json.dumps(configuration, sort_keys=True).encode()).hexdigest()
+        sequence = NumberSequence.objects.select_for_update().filter(
+            organization=actor.organization, namespace=namespace, period=period).first()
+        next_value = sequence.last_value + 1 if sequence else 1
+        result = plugin.execute(dict(sequence=next_value, on_date=day.isoformat()), configuration)
+        if NumberIssue.objects.filter(organization=actor.organization, value=result['text']).exists():
+            s.fail('NUMBER_COLLISION', '기존 발급 번호와 겹치는 설정입니다. 접두어·형식을 변경하십시오.', 409)
+        if issue:
+            if sequence is None:
+                sequence = NumberSequence(organization=actor.organization, namespace=namespace, period=period)
+            sequence.last_value = next_value
+            sequence.save()
+    else:
+        result = plugin.execute(payload['input'], configuration)
     run = PluginRun.objects.create(organization=actor.organization, binding=binding, actor=actor,
         plugin_id=plugin_id, plugin_version=plugin.version, manifest_digest=binding.manifest_digest,
         binding_version=binding.row_version, configuration=configuration,
-        input_length=len(payload['input']['text']), output_length=len(result['text']), request_id=request_id)
+        input_length=len(payload['input'].get('text','')), output_length=len(result['text']), request_id=request_id)
+    if issue:
+        NumberIssue.objects.create(organization=actor.organization, binding=binding, actor=actor, run=run,
+                                   value=result['text'], request_id=request_id)
     # No input/output text in run history, audit, or outbox.
     summary = dict(run_id=str(run.id), plugin_id=plugin_id, binding_version=binding.row_version,
                    manifest_digest=binding.manifest_digest, input_length=run.input_length,
                    output_length=run.output_length)
-    s.record(actor, run, 'PLUGIN_PREVIEWED', request_id, after=summary)
+    summary['operation'] = 'issue' if issue else 'preview'
+    s.record(actor, run, 'PLUGIN_NUMBER_ISSUED' if issue else 'PLUGIN_PREVIEWED', request_id, after=summary)
     return {**summary, 'output':result}, 200
 
 
 def mutate(actor, operation, payload, request_id, plugin_id):
     if operation == 'plugin_configure':
         return configure(actor, payload, request_id, plugin_id)
-    return preview(actor, payload, request_id, plugin_id)
+    return preview(actor, payload, request_id, plugin_id, issue=operation=='plugin_issue')

@@ -49,7 +49,8 @@ def console_navigation(path, context):
                      ('서비스 카탈로그', '/console/catalog', context['is_service_manager'])]),
         ('플랫폼 운영', [('플러그인 관리', '/console/plugins', can_configure)]),
         ('서비스 기준', [('SLA · 업무 달력', '/console/sla', context['is_service_manager'])]),
-        ('시스템 관리', [('조직 · 권한 관리', '/console/access', context['is_admin'])]),
+        ('시스템 관리', [('조직 · 권한 관리', '/console/access', context['is_admin']),
+                     ('공통코드 관리', '/console/codes', can_configure)]),
     ]
     canonical = path
     for old, new in [('/admin/entities','/console/entities'),('/admin/plugins','/console/plugins'),

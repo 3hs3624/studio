@@ -403,7 +403,7 @@ def plugin_configuration(request, plugin_id):
 
 @endpoint(['POST'])
 def plugin_preview(request, plugin_id):
-    return command(request, 'plugin_preview', plugin_id)
+    return plugin_command(request, 'plugin_preview', plugin_id)
 
 
 @endpoint(['GET'])
@@ -463,3 +463,53 @@ def entity_record_relations(request, id, record_id):
     s.require_console(request.actor)
     query(request, [])
     return related_data(request.actor, get_entity(request.actor, id), record_id)
+
+
+def plugin_command(request, operation, plugin_id):
+    from hashlib import sha256
+    from .models import PluginBinding, PluginFailure
+    from .plugin_service import definition
+    s.require_console(request.actor)
+    definition(plugin_id)
+    try:
+        return command(request, operation, plugin_id)
+    except s.BusinessError as exc:
+        key = request.headers.get('Idempotency-Key', '')
+        binding = PluginBinding.objects.filter(organization=request.actor.organization, plugin_id=plugin_id).first()
+        if binding and key and len(key) <= 128 and exc.code not in ('FORBIDDEN', 'SESSION_REVOKED'):
+            PluginFailure.objects.get_or_create(organization=request.actor.organization, actor=request.actor,
+                binding=binding, operation=operation, key_digest=sha256(key.encode()).hexdigest(),
+                defaults=dict(error_code=exc.code, binding_version=binding.row_version, request_id=request.request_id))
+        raise
+
+
+@endpoint(['POST'])
+def plugin_issue(request, plugin_id):
+    return plugin_command(request, 'plugin_issue', plugin_id)
+
+
+@endpoint(['GET','POST'])
+def common_code_groups(request):
+    from .models import CommonCodeGroup
+    from .common_codes import data
+    if request.method == 'POST':
+        return command(request, 'code_group')
+    s.require_console(request.actor)
+    query(request, [])
+    return {'items':[data(value) for value in CommonCodeGroup.objects.filter(organization=request.actor.organization).order_by('code')[:100]]}
+
+
+@endpoint(['GET','POST'])
+def common_code_group(request, id):
+    from .common_codes import group, data, uses
+    if request.method == 'POST':
+        return command(request, 'code_group', id)
+    s.require_console(request.actor)
+    query(request, [])
+    value = group(request.actor, id)
+    return {**data(value), 'usage':uses(request.actor, value)}
+
+
+@endpoint(['POST'])
+def common_code_items(request, id):
+    return command(request, 'code_items', id)

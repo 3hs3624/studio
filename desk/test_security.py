@@ -99,7 +99,7 @@ class AccountSecurityTests(Fixtures,TestCase):
         result=c.get('/api/v1/admin/security-events')
         self.assertEqual(result.status_code,200)
         self.assertNotIn(str(self.foreign.id),result.content.decode())
-        html=c.get('/admin/access')
+        html=c.get('/admin/access?tab=accounts')
         self.assertContains(html,'모든 기존 세션 회수')
 
     def test_open_assignment_blocks_suspension(self):

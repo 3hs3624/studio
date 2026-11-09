@@ -587,3 +587,66 @@ class EntityRecordLink(Base):
             models.UniqueConstraint(fields=['source', 'field_key'], condition=Q(scalar=True), name='entity_link_single_source'),
             models.UniqueConstraint(fields=['source_entity', 'field_key', 'target'], condition=Q(exclusive=True), name='entity_link_single_target'),
         ]
+
+
+class CommonCodeGroup(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=500, blank=True)
+    active = models.BooleanField(default=True)
+    locked = models.BooleanField(default=False, editable=False)
+    row_version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization', 'code'], name='common_group_code')]
+
+
+class CommonCodeItem(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    group = models.ForeignKey(CommonCodeGroup, on_delete=models.PROTECT, related_name='items')
+    code = models.CharField(max_length=40)
+    label = models.CharField(max_length=100)
+    description = models.CharField(max_length=500, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['group', 'code'], name='common_item_code')]
+        ordering = ['sort_order', 'code']
+
+
+class NumberSequence(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    namespace = models.CharField(max_length=64)
+    period = models.CharField(max_length=10)
+    last_value = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization', 'namespace', 'period'], name='number_sequence_scope')]
+
+
+class NumberIssue(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    binding = models.ForeignKey(PluginBinding, on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    run = models.OneToOneField(PluginRun, on_delete=models.PROTECT)
+    value = models.CharField(max_length=100)
+    request_id = models.UUIDField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization', 'value'], name='number_issue_unique')]
+
+
+class PluginFailure(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    binding = models.ForeignKey(PluginBinding, on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person, on_delete=models.PROTECT)
+    operation = models.CharField(max_length=30)
+    binding_version = models.PositiveIntegerField(default=1)
+    error_code = models.CharField(max_length=60)
+    key_digest = models.CharField(max_length=64)
+    request_id = models.UUIDField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization', 'actor', 'binding', 'operation', 'key_digest'], name='plugin_failure_retry')]

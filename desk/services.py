@@ -184,6 +184,10 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
+    if operation.startswith('code_'):
+        from .common_codes import authorize
+        authorize(p, operation, target)
+        return
     if operation.startswith('entity_'):
         from .entity_service import authorize
         authorize(p, operation, target)
@@ -277,6 +281,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op.startswith('code_'):
+        from .common_codes import mutate as code_mutate
+        return code_mutate(p, op, data, request_id, target)
     if op.startswith('entity_'):
         from .entity_service import mutate as entity_mutate
         return entity_mutate(p, op, data, request_id, target)
@@ -450,7 +457,8 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
             before,{'active':member.active,'reason':reason})
         return {'person_version':member.row_version,'active':member.active},200
     if op=='admin_members':
-        check_fields(data,['active','expected_version'],['active','expected_version'])
+        check_fields(data,['active','expected_version','reason'],['active','expected_version'])
+        reason=text(data,'reason',500,required=False)
         group=Group.objects.get(id=target,organization=p.organization)
         version(group,data)
         member=Person.objects.filter(id=subtarget,organization=p.organization,active=True,user__is_active=True).first()
@@ -467,9 +475,10 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
         member.session_epoch=uuid.uuid4()
         bump(member)
         bump(group)
-        record(p,group,'MEMBERSHIP_CHANGED',request_id,after={'person_id':str(member.id),'active':data['active']})
+        record(p,group,'MEMBERSHIP_CHANGED',request_id,after={'person_id':str(member.id),'active':data['active'],'reason':reason})
         return {'group_version':group.row_version},200
-    check_fields(data,['roles','expected_version'],['roles','expected_version'])
+    check_fields(data,['roles','expected_version','reason'],['roles','expected_version'])
+    reason=text(data,'reason',500,required=False)
     member=Person.objects.get(id=target,organization=p.organization)
     version(member,data)
     desired=data['roles']
@@ -489,7 +498,7 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
     if old != set(desired):
         member.session_epoch=uuid.uuid4()
     bump(member)
-    record(p,member,'ROLES_CHANGED',request_id,{'roles':sorted(old)},{'roles':sorted(desired)})
+    record(p,member,'ROLES_CHANGED',request_id,{'roles':sorted(old)},{'roles':sorted(desired),'reason':reason})
     return {'person_version':member.row_version},200
 
 def page(p, qs, params, serialize, scope=''):

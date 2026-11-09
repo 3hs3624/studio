@@ -26,7 +26,7 @@
 <td><input aria-label="표시 이름" data-field="label" maxlength="100" required></td>
 <td><select aria-label="필드 유형" data-field="type">{% for type in field_types %}<option value="{{ type.key }}">{{ type.label }}</option>{% endfor %}</select></td>
 <td><input aria-label="필수 입력" type="checkbox" data-field="required"></td>
-<td><input aria-label="선택지 · 쉼표 구분" data-field="options" data-choice-settings></td>
+<td><select aria-label="공통코드 그룹" data-field="code_group_id"><option value="">직접 선택지 입력</option>{% for group in code_groups %}<option value="{{ group.id }}">{{ group.code }} · {{ group.name }}{% if not group.active %} (중지){% endif %}</option>{% endfor %}</select><input aria-label="선택지 · 쉼표 구분" data-field="options" data-choice-settings></td>
 <td><select aria-label="참조 대상" data-reference-settings data-field="target_entity_id"><option value="">대상 선택</option>{% for target in targets %}<option value="{{ target.id }}">{{ target.code }} · {{ target.name }}</option>{% endfor %}</select></td>
 <td><select aria-label="연결 관계" data-reference-settings data-field="relationship">{% for relation in relationships %}<option value="{{ relation.key }}">{{ relation.label }}</option>{% endfor %}</select></td>
 <td class="entity-row-actions"><div><button type="button" class="secondary" data-move-field="-1" aria-label="위로 이동">↑</button><button type="button" class="secondary" data-move-field="1" aria-label="아래로 이동">↓</button><button class="secondary" type="button" data-remove-field>제거</button></div></td></tr></template>{% endif %}</section>
@@ -38,7 +38,7 @@
 <section class="panel plugin-panel"><h2>입력 검증 · 데이터 등록 — V{{ schema.version }}</h2><p class="muted">게시된 필드 정의로 입력 화면과 서버 검증을 적용합니다.</p>
 <form class="api-form" data-kind="entity-record" data-schema="{{ schema.id }}" data-url="/api/v1/admin/entities/{{ entity.id }}/records">{% csrf_token %}<div class="form-error error" role="alert" tabindex="-1" hidden></div>
 {% for field in schema_fields %}<label>{{ field.label }}{% if field.required %} *{% endif %}
-{% if field.type == 'choice' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.required %}required{% endif %}><option value="">선택</option>{% for value in field.options %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select>
+{% if field.type == 'choice' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.required %}required{% endif %}><option value="">선택</option>{% for value in field.choice_options %}<option value="{{ value.value }}">{{ value.label }}</option>{% endfor %}</select>
 {% elif field.type == 'boolean' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.required %}required{% endif %}><option value="">선택</option><option value="true">예</option><option value="false">아니오</option></select>
 {% elif field.type == 'reference' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.multiple %}multiple size="4"{% endif %} {% if field.required %}required{% endif %}><option value="">대상 선택</option>{% for record in field.reference_choices %}<option value="{{ record.id }}">{{ record.label }}</option>{% endfor %}</select>
 {% elif field.type == 'textarea' %}<textarea data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" maxlength="4000" {% if field.required %}required{% endif %}></textarea>

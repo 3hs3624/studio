@@ -7,7 +7,7 @@ from django.test import TransactionTestCase
 
 class EntityUpgradeTests(TransactionTestCase):
     migrate_from = ('desk', '0011_remove_rolegrant_role_allowlist_alter_rolegrant_role_and_more')
-    migrate_to = ('desk', '0012_entityrecordlink_entitydefinition_draft_junction_and_more')
+    migrate_to = ('desk', '0013_commoncodegroup_commoncodeitem_numberissue_and_more')
 
     def test_existing_records_metadata_and_references_are_backfilled(self):
         executor = MigrationExecutor(connection)
