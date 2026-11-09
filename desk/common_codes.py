@@ -38,6 +38,8 @@ def data(value):
 
 def authorize(actor, operation, target):
     s.require_console(actor)
+    from .permissions import require
+    require(actor,'code.write')
     if operation not in ('code_group', 'code_items'):
         s.fail('INVALID_OPERATION', '허용되지 않은 코드 관리 작업입니다.')
     if target:

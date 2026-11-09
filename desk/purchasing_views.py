@@ -17,10 +17,10 @@ def requisitions(request):
         c.update(s.page(actor,p.request_query(actor),request.GET.dict(),lambda r:p.requisition_data(r,actor),'purchase_requests'))
         if c['can_purchase_request']:
             from .catalog import request_query
+            from .permissions import people_with
             c.update(stock_items=StockItem.objects.filter(organization=c['org']),
                 source_requests=request_query(actor,'queue').filter(status='IN_PROGRESS'),
-                approvers=Person.objects.filter(organization=c['org'],active=True,user__is_active=True,
-                   rolegrant__role='PROCUREMENT_MANAGER').exclude(id=actor.id).distinct())
+                approvers=people_with(c['org'],'procurement.manage').exclude(id=actor.id))
     return render_page(request,'purchase-requests.html',build)
 
 @login_required
@@ -56,6 +56,7 @@ def inventory(request):
                  people=Person.objects.filter(organization=c['org'],active=True,user__is_active=True))
         if c['is_stock_manager']:
             from .catalog import request_query
+            from .permissions import people_with
             c['source_requests']=request_query(actor,'queue').filter(status='IN_PROGRESS')
             c['bulk_balances']=[b for b in c['balances_all'] if b.item.tracking=='BULK' and b.quantity>0]
             c['stock_assets']=StockAsset.objects.filter(organization=c['org'],stockroom__isnull=False,asset__status='STOCK').select_related('asset','item')

@@ -50,3 +50,5 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 .console-tabs{display:flex;overflow-x:auto;border-bottom:2px solid #e0e0e0;margin:24px 0}.console-tabs a{white-space:nowrap;color:#525252;padding:14px 24px;border-bottom:3px solid transparent;text-decoration:none}.console-tabs a[aria-selected=true]{color:#161616;border-bottom-color:#0f62fe;font-weight:600}.console-tabs a:focus-visible{outline:2px solid #0f62fe;outline-offset:-2px}.console-definition{display:grid;grid-template-columns:140px 1fr;gap:16px}.console-definition dd{margin:0}.settings-grid{min-width:650px}.settings-grid input,.settings-grid select{margin:0;width:100%;min-width:80px}.settings-grid input[type=checkbox]{width:16px;min-width:16px}.settings-grid td{vertical-align:middle}.role-tag{display:inline-block;background:#e0e0e0;margin:2px;padding:2px 8px}.settings-grid+button{margin-top:16px}
 
 .access-change-reason{min-width:160px;max-width:220px}.access-change-reason input{margin:0}
+
+.permission-scope{border:0;margin:0;padding:0;min-width:0}.permission-scope[disabled]{opacity:.7}.security-notice{padding:16px;background:#fff1c7;border-left:3px solid #f1c21b}

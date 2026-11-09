@@ -5,7 +5,24 @@ document.querySelectorAll('.api-form').forEach(form => {
     const inputs = new FormData(form), kind = form.dataset.kind;
     const payload = {}, number = name => Number(inputs.get(name));
     if (form.dataset.version) payload.expected_version = Number(form.dataset.version);
-    if (kind === 'code-group') {
+    let policyPreview=false;
+    if (kind === 'security-policy') {
+      payload.configuration={};form.querySelectorAll('[data-policy-field]').forEach(input=>{payload.configuration[input.dataset.policyField]=input.dataset.policyType==='boolean'?input.checked:input.dataset.policyType==='integer'?Number(input.value):input.value;});
+      payload.reason=inputs.get('reason');payload.apply_confirmed=inputs.has('apply_confirmed');
+      policyPreview=!!event.submitter?.hasAttribute('data-policy-preview');
+    } else if (['role-save','group-save'].includes(kind)) {
+      Object.assign(payload,{code:inputs.get('code'),name:inputs.get('name'),description:inputs.get('description'),active:inputs.has('active'),reason:inputs.get('reason')});
+      if(kind==='role-save')payload.permissions=inputs.getAll('permissions');
+    } else if (kind === 'role-grant') {
+      Object.assign(payload,{person_id:inputs.get('person_id'),active:inputs.has('active'),reason:inputs.get('reason')});
+    } else if (kind === 'user-create' || kind === 'user-save') {
+      for(const key of ['username','full_name','given_name','family_name','email','phone','employee_id','expires_on'])if(inputs.has(key))payload[key]=inputs.get(key);
+      payload.reason=inputs.get('reason');if(kind==='user-create'){payload.invite=inputs.has('invite');if(!payload.invite)payload.password=inputs.get('password');}
+    } else if (kind === 'user-reset') {
+      Object.assign(payload,{password:inputs.get('password'),reason:inputs.get('reason')});
+    } else if(['user-action','manage-delete','user-invite','user-session'].includes(kind)) {
+      payload.reason=inputs.get('reason');if(kind==='user-session')payload.session_id=inputs.get('session_id');
+    } else if (kind === 'code-group') {
       Object.assign(payload,{code:inputs.get('code'),name:inputs.get('name'),description:inputs.get('description'),active:inputs.has('active'),reason:inputs.get('reason')});
     } else if(kind === 'code-items') {
       payload.reason=inputs.get('reason');
@@ -170,14 +187,15 @@ document.querySelectorAll('.api-form').forEach(form => {
       else Object.assign(payload, {resource_type, resource_id});
     }
     const serialized = JSON.stringify(payload);
-    if (kind === 'plugin-preview' || form.dataset.payload !== serialized) {
-      form.dataset.payload = serialized;
+    const fingerprint=['user-create','user-save','user-reset'].includes(kind)?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(serialized)))).map(v=>v.toString(16).padStart(2,'0')).join(''):serialized;
+    if (kind === 'plugin-preview' || form.dataset.payload !== fingerprint) {
+      form.dataset.payload = fingerprint;
       form.dataset.key = crypto.randomUUID();
     }
     const button = event.submitter || form.querySelector('button[type="submit"], button'), error = form.querySelector('.form-error');
     button.disabled = true;
     error.hidden = true;
-    let url = form.dataset.url;
+    let url = policyPreview?form.dataset.previewUrl:form.dataset.url;
     const method = form.dataset.method || 'POST';
     if (method === 'DELETE') url += '?expected_version=' + payload.expected_version;
     try {
@@ -190,7 +208,9 @@ document.querySelectorAll('.api-form').forEach(form => {
         if (result.error?.code === 'VERSION_CONFLICT') message += ' 입력을 복사해 두신 뒤 페이지를 새로고침하십시오.';
         throw new Error(message);
       }
-      document.dispatchEvent(new CustomEvent('configuration-saved',{detail:form}));
+      if(!policyPreview)document.dispatchEvent(new CustomEvent('configuration-saved',{detail:form}));
+      if(policyPreview){const output=form.querySelector('[data-policy-output]');output.textContent=result.output.text;output.hidden=false;button.disabled=false;return;}
+      if(kind==='user-invite'){const output=form.querySelector('[data-invitation-output]');output.textContent=result.invitation_url;output.hidden=false;button.disabled=false;return;}
       if (kind === 'plugin-preview' || kind === 'plugin-issue') {
         const output = form.querySelector('[data-plugin-output]');
         output.textContent = typeof result.output.text==='string'?result.output.text:JSON.stringify(result.output,null,2);
@@ -198,6 +218,10 @@ document.querySelectorAll('.api-form').forEach(form => {
         output.hidden = false;
         button.disabled = false;
       }
+      else if (kind === 'manage-delete') location.assign(form.dataset.listUrl);
+      else if (kind === 'role-save') location.assign('/console/roles/'+result.id);
+      else if (kind === 'group-save') location.assign('/console/groups/'+result.id);
+      else if (kind === 'user-create') location.assign('/console/users/'+result.id+'?tab=security');
       else if (kind === 'code-group') location.assign('/console/codes/'+result.id);
       else if (kind === 'entity-save') location.assign((form.dataset.detailBase || '/console/entities') + '/' + result.id);
       else if (kind === 'create') location.assign('/portal/incidents/' + result.id);
@@ -369,3 +393,5 @@ if(addCommonCode)addCommonCode.addEventListener('click',()=>{
 });
 
 document.addEventListener('click',event=>{const button=event.target.closest('[data-remove-code-row]');if(button){const form=button.closest('form');button.closest('[data-code-item]').remove();dirtyConfigurationForms.add(form);}});
+
+const activationToken=document.getElementById('activation-token');if(activationToken && location.hash){activationToken.value=decodeURIComponent(location.hash.slice(1));history.replaceState(null,'',location.pathname);}

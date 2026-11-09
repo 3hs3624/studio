@@ -23,18 +23,42 @@ class Person(Base):
     session_epoch = models.UUIDField(default=uuid.uuid4, editable=False)
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='person')
-    display_name = models.CharField(max_length=200)
     active = models.BooleanField(default=True)
     row_version = models.PositiveIntegerField(default=1)
+    expires_on = models.DateField(null=True, blank=True)
+
+    @property
+    def display_name(self):
+        if hasattr(self, '_pending_display_name'):
+            return self._pending_display_name
+        try:
+            return self.profile.full_name
+        except UserProfile.DoesNotExist:
+            return ''
+
+    @display_name.setter
+    def display_name(self, value):
+        self._pending_display_name = value
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if hasattr(self, '_pending_display_name'):
+            UserProfile.objects.update_or_create(person=self, defaults=dict(organization_id=self.organization_id,full_name=self._pending_display_name))
+            del self._pending_display_name
+
+def group_code():
+    return 'G_' + uuid.uuid4().hex[:20].upper()
 
 class Group(Base):
+    code = models.CharField(max_length=40, default=group_code)
+    description = models.CharField(max_length=500, blank=True)
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
     name = models.CharField(max_length=200)
     active = models.BooleanField(default=True)
     triage = models.BooleanField(default=False)
     row_version = models.PositiveIntegerField(default=1)
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['organization', 'name'], name='group_org_name'),
+        constraints = [models.UniqueConstraint(fields=['organization', 'code'], name='group_org_code'), models.UniqueConstraint(fields=['organization', 'name'], name='group_org_name'),
                        models.UniqueConstraint(fields=['organization'], condition=Q(triage=True, active=True), name='one_active_triage')]
 
 class Membership(Base):
@@ -650,3 +674,91 @@ class PluginFailure(Base):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['organization', 'actor', 'binding', 'operation', 'key_digest'], name='plugin_failure_retry')]
+
+
+class UserProfile(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    person = models.OneToOneField(Person,on_delete=models.PROTECT,related_name='profile')
+    full_name = models.CharField(max_length=200)
+    given_name = models.CharField(max_length=150,blank=True)
+    family_name = models.CharField(max_length=150,blank=True)
+    email = models.EmailField(max_length=254,blank=True)
+    phone = models.CharField(max_length=40,blank=True)
+    employee_id = models.CharField(max_length=80,blank=True)
+
+
+class PrivacyAccessEvent(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person,on_delete=models.PROTECT,related_name='+')
+    subject = models.ForeignKey(Person,on_delete=models.PROTECT,related_name='+')
+    action = models.CharField(max_length=30)
+    request_id = models.UUIDField()
+
+
+class RoleDefinition(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=500,blank=True)
+    permissions = models.JSONField(default=list)
+    system = models.BooleanField(default=False)
+    active = models.BooleanField(default=True)
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','code'],name='role_definition_code')]
+
+
+class CustomRoleGrant(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    person = models.ForeignKey(Person,on_delete=models.PROTECT)
+    role = models.ForeignKey(RoleDefinition,on_delete=models.PROTECT)
+    active = models.BooleanField(default=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['person','role'],name='custom_role_person')]
+
+
+class SecurityPolicy(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    category = models.CharField(max_length=20)
+    configuration = models.JSONField(default=dict)
+    row_version = models.PositiveIntegerField(default=1)
+    applied_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    applied_at = models.DateTimeField(default=timezone.now)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['organization','category'],name='organization_security_policy')]
+
+
+class CredentialState(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    person = models.OneToOneField(Person,on_delete=models.PROTECT,related_name='credential_state')
+    password_changed_at = models.DateTimeField(default=timezone.now)
+    password_policy_version = models.PositiveIntegerField(default=0)
+    force_change = models.BooleanField(default=False)
+    reactivated_at = models.DateTimeField(null=True)
+    failed_count = models.PositiveIntegerField(default=0)
+    first_failed_at = models.DateTimeField(null=True)
+    locked_until = models.DateTimeField(null=True)
+    mfa_secret = models.TextField(blank=True)
+    mfa_last_counter = models.BigIntegerField(default=-1)
+    recovery_hashes = models.JSONField(default=list)
+
+
+class PasswordHistory(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    person = models.ForeignKey(Person,on_delete=models.PROTECT)
+    password_hash = models.CharField(max_length=128)
+
+
+class LoginThrottle(Base):
+    key = models.CharField(max_length=64,unique=True)
+    count = models.PositiveIntegerField(default=0)
+    since = models.DateTimeField(default=timezone.now)
+
+
+class LoginSession(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    person = models.ForeignKey(Person,on_delete=models.PROTECT)
+    session_key = models.CharField(max_length=40,unique=True)
+    started_at = models.DateTimeField(default=timezone.now)
+    last_seen_at = models.DateTimeField(default=timezone.now)
+    revoked = models.BooleanField(default=False)

@@ -143,10 +143,10 @@ class ConfigurationTests(Fixtures, TestCase):
         self.assertContains(self.client.get('/console/plugins/text.normalize?tab=settings'),'data-plugin-setting="trim"')
         self.assertEqual(self.client.get('/console/plugins/missing').status_code,404)
         self.assertEqual(self.client.get('/console/plugins/number.generate?tab=unknown').status_code,404)
-        for tab in ['users','roles','groups','accounts','history']:
+        for tab in ['roles','groups','history']:
             self.assertContains(self.client.get('/console/access?tab='+tab),'aria-selected="true"')
-        self.assertContains(self.client.get('/console/access?tab=accounts'),'모든 기존 세션 회수')
-        self.assertNotContains(self.client.get('/console/access?tab=users'),'모든 기존 세션 회수')
+        self.assertContains(self.client.get('/admin/access?tab=accounts'),'모든 기존 세션 회수')
+        self.assertNotContains(self.client.get('/console/users'),'모든 기존 세션 회수')
         self.assertContains(self.client.get('/console'),'href="/console/codes"')
 
     def test_ordinary_users_blocked_and_operators_cannot_edit_access(self):

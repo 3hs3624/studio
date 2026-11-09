@@ -43,14 +43,20 @@ LEGACY_CONSOLE_PATHS = ('/admin/', '/work/catalog', '/work/sla')
 
 def console_navigation(path, context):
     groups = []
-    can_configure = bool(context['roles'] & {'ORG_ADMIN','DEVELOPER','SOLUTION_OPERATOR'})
+    from .permissions import allowed
+    actor=context['actor']
+    can_configure=allowed(actor,'console.access')
     rows = [
-        ('업무 구성', [('엔티티 관리', '/console/entities', can_configure),
+        ('업무 구성', [('엔티티 관리', '/console/entities', allowed(actor,'entity.read')),
                      ('서비스 카탈로그', '/console/catalog', context['is_service_manager'])]),
-        ('플랫폼 운영', [('플러그인 관리', '/console/plugins', can_configure)]),
+        ('플랫폼 운영', [('플러그인 관리', '/console/plugins', allowed(actor,'plugin.read'))]),
         ('서비스 기준', [('SLA · 업무 달력', '/console/sla', context['is_service_manager'])]),
-        ('시스템 관리', [('조직 · 권한 관리', '/console/access', context['is_admin']),
-                     ('공통코드 관리', '/console/codes', can_configure)]),
+        ('시스템 관리', [('사용자 관리','/console/users',allowed(actor,'users.manage')),
+                     ('조직 · 권한 관리', '/console/access', allowed(actor,'iam.manage')),
+                     ('역할 관리','/console/roles',allowed(actor,'iam.manage')),
+                     ('그룹 관리','/console/groups',allowed(actor,'iam.manage')),
+                     ('보안 관리','/console/security',allowed(actor,'security.manage')),
+                     ('공통코드 관리', '/console/codes', allowed(actor,'code.read'))]),
     ]
     canonical = path
     for old, new in [('/admin/entities','/console/entities'),('/admin/plugins','/console/plugins'),

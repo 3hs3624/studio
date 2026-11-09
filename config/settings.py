@@ -14,7 +14,7 @@ INSTALLED_APPS = ['django.contrib.auth', 'django.contrib.contenttypes', 'django.
                   'django.contrib.messages', 'django.contrib.staticfiles', 'desk']
 MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'desk.middleware.RequestIDMiddleware',
               'django.contrib.sessions.middleware.SessionMiddleware', 'django.middleware.common.CommonMiddleware',
-              'django.middleware.csrf.CsrfViewMiddleware', 'django.contrib.auth.middleware.AuthenticationMiddleware', 'desk.middleware.SessionBindingMiddleware',
+              'django.middleware.csrf.CsrfViewMiddleware', 'django.contrib.auth.middleware.AuthenticationMiddleware', 'desk.middleware.SessionBindingMiddleware', 'desk.middleware.SecurityPolicyMiddleware',
               'django.contrib.messages.middleware.MessageMiddleware', 'django.middleware.clickjacking.XFrameOptionsMiddleware']
 ROOT_URLCONF = 'config.urls'
 TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates', 'DIRS': [], 'APP_DIRS': True,
@@ -66,7 +66,8 @@ SESSION_SAVE_EVERY_REQUEST = False
 AUTH_MODE = os.environ.get('AUTH_MODE','local')
 if AUTH_MODE != 'local':
     raise ImproperlyConfigured('Only local authentication is currently implemented; configure SSO after provider integration.')
-AUTHENTICATION_BACKENDS = ['django.contrib.auth.backends.ModelBackend']
+AUTHENTICATION_BACKENDS = ['desk.auth_backend.PolicyBackend']
+SECURITY_TRUSTED_PROXY_CIDRS = [v for v in os.environ.get('SECURITY_TRUSTED_PROXY_CIDRS','').split(',') if v]
 # Enable only behind the private, non-published web service in deploy/compose.yaml.
 if os.environ.get('TRUST_PROXY_HEADERS') == '1':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO','https')
@@ -86,3 +87,5 @@ if os.environ.get('SERVE_STATIC') == '1':
 STUDIO_ENVIRONMENT = os.environ.get('STUDIO_ENVIRONMENT', 'development' if DEBUG else 'unspecified')
 if STUDIO_ENVIRONMENT not in ('development', 'staging', 'production', 'unspecified'):
     raise ImproperlyConfigured('STUDIO_ENVIRONMENT must be development, staging, production, or unspecified.')
+
+PASSWORD_RESET_TIMEOUT = 3600

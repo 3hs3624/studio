@@ -16,22 +16,24 @@ class LocalAccountAuthenticationForm(AuthenticationForm):
 
 class StudioLoginView(LoginView):
     authentication_form = LocalAccountAuthenticationForm
-    """Local process throttle; shared edge throttling is required for multi-worker deployments."""
-    def post(self,request,*args,**kwargs):
-        key='login:'+request.META.get('REMOTE_ADDR','unknown')
-        attempts=cache.get(key,0)
-        if attempts>=10:
-            return HttpResponse('로그인 시도가 많습니다. 잠시 후 다시 시도하십시오.',status=429)
-        cache.set(key,attempts+1,300)
-        result=super().post(request,*args,**kwargs)
-        if result.status_code==302:
-            cache.delete(key)
-        return result
+    def form_valid(self,form):
+        from .security_policy import state
+        person=Person.objects.get(user=form.get_user())
+        if state(person).mfa_secret:
+            from .security import evidence
+            evidence('MFA_CHALLENGE',person,self.request)
+            from django.utils import timezone
+            self.request.session['pending_mfa_user']=person.user_id
+            self.request.session['pending_mfa_time']=timezone.now().timestamp()
+            self.request.session['pending_mfa_next']=self.get_success_url()
+            return redirect('/login/mfa/')
+        return super().form_valid(form)
 
 def context(request):
     from .sla import visible_notifications
     from .models import RequestApproval
     p=s.actor_for(request.user)
+    p._recent_auth=request.session.get('recent_auth_at',0)
     c = {'actor':p,'roles':s.roles(p),'org':p.organization,'can_work':bool(s.group_ids(p)) or s.manager(p),
             'is_admin':'ORG_ADMIN' in s.roles(p),'is_service_manager':s.manager(p),
             'is_asset_manager':'ASSET_MANAGER' in s.roles(p),
@@ -44,7 +46,22 @@ def context(request):
     from .navigation import navigation, console_navigation, LEGACY_CONSOLE_PATHS
     from django.conf import settings
     c.update(navigation(request.path,c))
+    from .security_policy import policy,state
+    from django.utils import timezone
+    from datetime import timedelta
+    security_password=policy(p.organization,'password')
+    c['password_notice']=''
+    if security_password['max_age_days']:
+        days=(state(p).password_changed_at+timedelta(days=security_password['max_age_days'])-timezone.now()).days
+        if 0<=days<=security_password['warning_days']:c['password_notice']=str(days)+'일 이내 비밀번호가 만료됩니다. 내 계정 보안에서 변경하십시오.'
     c['can_console'] = s.can_console(p)
+    c['can_entity_write'] = s.has_permission(p,'entity.write')
+    c['can_plugin_configure'] = s.has_permission(p,'plugin.configure')
+    c['can_plugin_execute'] = s.has_permission(p,'plugin.execute')
+    c['can_code_write'] = s.has_permission(p,'code.write')
+    c['can_users'] = s.has_permission(p,'users.manage')
+    c['can_iam'] = s.has_permission(p,'iam.manage')
+    c['can_security'] = s.has_permission(p,'security.manage')
     c['console_mode'] = (request.path == '/console' or request.path.startswith('/console/')
                          or request.path.startswith(LEGACY_CONSOLE_PATHS))
     c['base_template'] = 'desk/console-base.html' if c['console_mode'] else 'desk/base.html'
@@ -55,6 +72,10 @@ def context(request):
     c['entity_base'] = '/console/entities'
     if c['console_mode']:
         s.require_console(p)
+        from .permissions import require
+        canonical=request.path.replace('/admin/entities','/console/entities').replace('/admin/plugins','/console/plugins').replace('/admin/access','/console/access')
+        for prefix,permission in [('/console/users','users.manage'),('/console/security','security.manage'),('/console/roles','iam.manage'),('/console/groups','iam.manage'),('/console/access','iam.manage'),('/console/entities','entity.read'),('/console/plugins','plugin.read'),('/console/codes','code.read')]:
+            if canonical.startswith(prefix):require(p,permission)
         c.update(active_area='console', area_name='운영 콘솔')
     return c
 
@@ -138,16 +159,17 @@ def admin_access(request):
         c=context(request)
         s.require_admin(c['actor'])
         people=[]
-        for p in Person.objects.filter(organization=c['org']).order_by('display_name'):
+        for p in Person.objects.filter(organization=c['org']).order_by('profile__full_name'):
             people.append({'person':p,'roles':[{'name':r,'checked':r in s.roles(p)} for r in ROLES]})
         from .models import SecurityEvent
-        tab = request.GET.get('tab','users')
+        tab = request.GET.get('tab','roles' if request.path.startswith('/console') else 'users')
         labels = [('users','사용자'),('roles','역할·권한'),('groups','담당 그룹'),('accounts','계정·세션'),('history','변경 이력')]
+        if request.path.startswith('/console'):labels=[('roles','기본 역할 배정'),('groups','그룹 소속'),('history','변경 이력')]
         if tab not in dict(labels):
             s.fail('NOT_FOUND','탭을 찾을 수 없습니다.',404)
         from .models import AuditEvent
         c.update(active_tab=tab, tabs=[dict(key=key,label=label,url='/console/access?tab='+key) for key,label in labels],
-                 access_changes=AuditEvent.objects.filter(organization=c['org'],action__in=['ROLES_CHANGED','MEMBERSHIP_CHANGED','ACCOUNT_CHANGED','SESSIONS_REVOKED']).select_related('actor').order_by('-created_at')[:50])
+                 access_changes=AuditEvent.objects.filter(organization=c['org'],action__in=['ROLES_CHANGED','MEMBERSHIP_CHANGED','ACCOUNT_CHANGED','SESSIONS_REVOKED','ROLE_DEFINED','ROLE_DELETED','GROUP_DEFINED','GROUP_DELETED','CUSTOM_ROLE_ASSIGNED']).select_related('actor').order_by('-created_at')[:50])
         c.update(people=people,groups=Group.objects.filter(organization=c['org']),
                  security_events=SecurityEvent.objects.filter(organization=c['org']).select_related('person').order_by('-created_at')[:50])
         c['memberships']=[{'group':g,'people':[{'person':item['person'],

@@ -8,7 +8,7 @@ def manager(p):
     return 'ASSET_MANAGER' in s.roles(p)
 
 def full_reader(p):
-    return bool(s.roles(p)&{'ASSET_MANAGER','RESOURCE_READER'})
+    return s.has_permission(p,'asset.read') or manager(p)
 
 def require_manager(p):
     if not manager(p):

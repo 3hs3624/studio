@@ -1,10 +1,23 @@
 from django.urls import path
 from django.contrib.auth.views import LogoutView
-from desk import api, views, asset_views, inventory_api, purchasing_views
+from desk import identity_views, account_views, api, views, asset_views, inventory_api, purchasing_views
 
 handler404 = 'desk.api.not_found'
 handler500 = 'desk.api.server_error'
 urlpatterns = [
+    path('console/users', identity_views.users),
+    path('console/users/<str:id>', identity_views.users),
+    path('console/roles', identity_views.roles),
+    path('console/roles/<str:id>', identity_views.roles),
+    path('console/groups', identity_views.groups),
+    path('console/groups/<str:id>', identity_views.groups),
+    path('console/security', identity_views.security_policies),
+    path('console/security/<str:category>', identity_views.security_policies),
+    path('api/v1/management/<str:kind>', api.identity_command),
+    path('api/v1/management/<str:kind>/<str:id>', api.identity_command),
+    path('account/security', account_views.account_security),
+    path('login/mfa/', account_views.mfa_login),
+    path('activate/<str:uid>/', account_views.activate_account),
     path('console', views.console_home),
     path('console/access', views.admin_access),
     path('console/entities', views.entity_management),

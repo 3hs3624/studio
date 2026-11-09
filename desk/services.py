@@ -25,13 +25,22 @@ def actor_for(user):
     return p
 
 def roles(p):
-    return set(RoleGrant.objects.filter(person=p, organization=p.organization).values_list('role', flat=True))
+    from .permissions import custom_grants, ALIASES
+    result=set(RoleGrant.objects.filter(person=p, organization=p.organization).values_list('role', flat=True))
+    for grant in custom_grants(p).select_related('role'):
+        result.update(ALIASES[key] for key in grant.role.permissions if key in ALIASES)
+    return result
+
+def has_permission(p,key):
+    from .permissions import allowed
+    return allowed(p,key)
 
 def manager(p):
     return 'SERVICE_MANAGER' in roles(p)
 
 def can_console(p):
-    return bool(roles(p) & {'ORG_ADMIN', 'DEVELOPER', 'SOLUTION_OPERATOR'})
+    from .permissions import allowed
+    return allowed(p,'console.access')
 
 
 def require_console(p):
@@ -40,8 +49,8 @@ def require_console(p):
 
 
 def require_admin(p):
-    if 'ORG_ADMIN' not in roles(p):
-        fail('FORBIDDEN', '조직 관리자 권한이 필요합니다.', 403)
+    from .permissions import require
+    require(p,'iam.manage')
 
 def group_ids(p):
     if 'AGENT' not in roles(p):
@@ -102,7 +111,7 @@ def resources_query(p, model):
         from .assets import query
         return query(p)
     q = model.objects.filter(organization=p.organization)
-    return q if 'RESOURCE_READER' in roles(p) else q.filter(portal_visible=True)
+    return q if has_permission(p,'resource.read') else q.filter(portal_visible=True)
 
 def resource_data(obj,p=None):
     if isinstance(obj,Asset):
@@ -184,6 +193,10 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
+    if operation.startswith('manage_'):
+        from .identity_management import authorize
+        authorize(p,operation,target)
+        return
     if operation.startswith('code_'):
         from .common_codes import authorize
         authorize(p, operation, target)
@@ -213,7 +226,10 @@ def authorize_command(p, operation, target):
         if not visible_notifications(p).filter(id=target).exists():
             fail('NOT_FOUND','알림을 찾을 수 없습니다.',404)
     elif operation.startswith('admin_'):
-        require_admin(p)
+        from .permissions import require
+        require(p, 'users.manage' if operation in ('admin_account','admin_revoke_sessions') else 'iam.manage')
+        if operation!='admin_members' and RoleGrant.objects.filter(person_id=target,role='ORG_ADMIN').exists() and not RoleGrant.objects.filter(person=p,role='ORG_ADMIN').exists():
+            fail('PRIVILEGED_ACCOUNT','시스템 관리자 계정은 시스템 관리자만 변경할 수 있습니다.',403)
         model = Group if operation=='admin_members' else Person
         if not model.objects.filter(id=target,organization=p.organization).exists():
             fail('NOT_FOUND','대상을 찾을 수 없습니다.',404)
@@ -227,13 +243,27 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
     if not isinstance(key,str) or not 1 <= len(key) <= 128:
         fail('IDEMPOTENCY_REQUIRED','Idempotency-Key가 필요합니다.',400)
     op_key = f'{operation}:{target or ""}:{subtarget or ""}'
-    digest = hashlib.sha256(json.dumps(data,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+    hash_data=dict(data)
+    from django.utils.crypto import salted_hmac
+    if operation.startswith('manage_user_'):
+        for personal in ('full_name','given_name','family_name','email','phone','employee_id'):
+            if isinstance(hash_data.get(personal),str):hash_data[personal]=salted_hmac('command-personal',hash_data[personal],algorithm='sha256').hexdigest()
+    for secret in ('password','temporary_password'):
+        if isinstance(hash_data.get(secret),str):hash_data[secret]=salted_hmac('command-secret',hash_data[secret],algorithm='sha256').hexdigest()
+    digest = hashlib.sha256(json.dumps(hash_data,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
     session_binding=getattr(p,'_session_binding',None)
+    recent_auth=getattr(p,'_recent_auth',0)
+    request_context=getattr(p,'_request_context',None)
+    proxy_unverified=getattr(p,'_proxy_unverified',False)
     with transaction.atomic():
         # Coarse per-organization lock prioritizes correctness in the first release.
         Organization.objects.select_for_update().get(id=p.organization_id)
         p = Person.objects.select_for_update().get(id=p.id)
-        if not p.active or not p.user.is_active or not p.organization.active:
+        p._recent_auth=recent_auth
+        p._request_context=request_context
+        p._proxy_unverified=proxy_unverified
+        from .security_policy import expired
+        if not p.active or not p.user.is_active or not p.organization.active or expired(p):
             fail('FORBIDDEN','활성 계정이 필요합니다.',403)
         if session_binding is not None:
             from .security import binding
@@ -251,7 +281,8 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
                 permitted=(current.requested_by_id==p.id or manager(p)) if action in ('CLOSE','REOPEN') else (staff(p,current) and (current.assignee_id==p.id or manager(p)))
                 if not permitted:
                     fail('FORBIDDEN','현재 상태 변경 권한이 없습니다.',403)
-            result = dict(previous.response_body)
+            from .privacy import restore_value
+            result = restore_value(dict(previous.response_body),p)
             if operation.startswith(('buy_','stock_')):
                 from .procurement import replay
                 result=replay(p,operation,data,result)
@@ -276,11 +307,15 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
                     fail('FORBIDDEN','현재 댓글 접근 권한이 없습니다.',403)
             return result, previous.response_code
         result, status = mutate(p,operation,data,request_id,target,subtarget)
+        from .privacy import cache_value
         IdempotencyRecord.objects.create(organization=p.organization,actor=p,operation=op_key,key=key,
-                                         request_hash=digest,response_code=status,response_body=result)
+                                         request_hash=digest,response_code=status,response_body=cache_value(result,p))
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op.startswith('manage_'):
+        from .identity_management import mutate as manage_mutate
+        return manage_mutate(p,op,data,request_id,target)
     if op.startswith('code_'):
         from .common_codes import mutate as code_mutate
         return code_mutate(p, op, data, request_id, target)
@@ -461,8 +496,9 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
         reason=text(data,'reason',500,required=False)
         group=Group.objects.get(id=target,organization=p.organization)
         version(group,data)
-        member=Person.objects.filter(id=subtarget,organization=p.organization,active=True,user__is_active=True).first()
-        if not member or not group.active:
+        member=Person.objects.filter(id=subtarget,organization=p.organization).first()
+        if member and data['active'] and (not member.active or not member.user.is_active):member=None
+        if not member or (data['active'] and not group.active):
             fail('INVALID_MEMBER','활성 그룹과 사용자가 필요합니다.')
         if type(data['active']) is not bool:
             fail('INVALID_MEMBER','active는 boolean이어야 합니다.')
@@ -484,7 +520,11 @@ def admin_mutate(p,op,data,request_id,target,subtarget):
     desired=data['roles']
     if not isinstance(desired,list) or not all(isinstance(x,str) for x in desired) or set(desired)-set(ROLES) or len(set(desired))!=len(desired):
         fail('INVALID_ROLES','허용된 역할을 중복 없이 지정하십시오.')
-    old=roles(member)
+    from .permissions import BUILTIN, effective
+    if 'ORG_ADMIN' not in set(RoleGrant.objects.filter(person=p).values_list('role',flat=True)):
+        if 'ORG_ADMIN' in desired or any(not BUILTIN.get(role,set()) <= effective(p) for role in desired):
+            fail('CANNOT_DELEGATE','자신에게 없는 권한이나 시스템 관리자 역할을 배정할 수 없습니다.',403)
+    old=set(RoleGrant.objects.filter(person=member).values_list('role',flat=True))
     if 'ORG_ADMIN' in old and 'ORG_ADMIN' not in desired:
         others=RoleGrant.objects.filter(organization=p.organization,role='ORG_ADMIN',person__active=True,
                                          person__user__is_active=True).exclude(person=member)

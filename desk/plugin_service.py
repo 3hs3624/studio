@@ -51,6 +51,8 @@ def require_active(actor, plugin_id, trail=()):
 
 def authorize(actor, operation, plugin_id):
     s.require_console(actor)
+    from .permissions import require
+    require(actor,'plugin.configure' if operation=='plugin_configure' else 'plugin.execute')
     definition(plugin_id)
     if operation in ('plugin_preview', 'plugin_issue'):
         require_active(actor, plugin_id)

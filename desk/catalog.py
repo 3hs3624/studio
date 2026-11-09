@@ -217,9 +217,9 @@ def notify(p,t,event,kind,recipients):
             Notification.objects.get_or_create(organization=p.organization,recipient=person,ticket=t,event=event,defaults={'kind':kind})
 
 def ready_recipients(t):
-    managers=RoleGrant.objects.filter(organization=t.organization,role='SERVICE_MANAGER').values_list('person_id',flat=True)
-    agents=Membership.objects.filter(organization=t.organization,group=t.group,group__active=True,
-                person__rolegrant__role='AGENT').values_list('person_id',flat=True)
+    from .permissions import people_with
+    managers=people_with(t.organization,'service.manage').values_list('id',flat=True)
+    agents=people_with(t.organization,'service.work').filter(membership__group=t.group,membership__group__active=True).values_list('id',flat=True)
     return set(managers)|set(agents)
 
 def authorize(p,op,target):

@@ -98,8 +98,8 @@ def notify(instance,goal,level):
     if not created:
         return
     t=instance.ticket
-    recipients=set(RoleGrant.objects.filter(organization=instance.organization,role='SERVICE_MANAGER',
-              person__active=True,person__user__is_active=True).values_list('person_id',flat=True))
+    from .permissions import people_with
+    recipients=set(people_with(instance.organization,'service.manage').values_list('id',flat=True))
     if t.assignee_id:
         recipients.add(t.assignee_id)
     from .services import staff

@@ -39,6 +39,15 @@ def endpoint(methods):
                 request.actor=s.actor_for(request.user)
                 from .security import SESSION_KEY
                 request.actor._session_binding=request.session.get(SESSION_KEY,'')
+                request.actor._recent_auth=request.session.get('recent_auth_at',0)
+                request.actor._request_context=request
+                from django.conf import settings
+                request.actor._proxy_unverified=bool(request.META.get('HTTP_X_FORWARDED_FOR') and not settings.SECURITY_TRUSTED_PROXY_CIDRS)
+                from .permissions import require
+                for prefix,read,write in [('/api/v1/admin/entities','entity.read','entity.write'),('/api/v1/admin/code-groups','code.read','code.write')]:
+                    if request.path.startswith(prefix):require(request.actor,read if request.method=='GET' else write)
+                if request.path.startswith('/api/v1/admin/plugins') or request.path.startswith('/api/v1/admin/plugin-runs'):
+                    require(request.actor,'plugin.read' if request.method=='GET' else 'plugin.configure' if request.path.endswith('/configuration') else 'plugin.execute')
                 result=fn(request,*args,**kwargs)
                 return result if isinstance(result,HttpResponse) else JsonResponse(result)
             except s.BusinessError as exc:
@@ -68,6 +77,9 @@ def query(request,allowed):
     return request.GET.dict()
 
 def command(request,operation,target=None,subtarget=None):
+    if operation.startswith('admin_'):
+        from .security_policy import require_recent
+        require_recent(request.actor)
     data=body(request) if request.method!='DELETE' else {'expected_version':parse_version(request.GET.get('expected_version'))}
     if request.method=='DELETE':
         query(request,['expected_version'])
@@ -513,3 +525,23 @@ def common_code_group(request, id):
 @endpoint(['POST'])
 def common_code_items(request, id):
     return command(request, 'code_items', id)
+
+
+@endpoint(['POST'])
+def identity_command(request,kind,id=None):
+    commands={'users':'user_create' if id is None else 'user_save','roles':'role_save','groups':'group_save',
+              'role-delete':'role_delete','role-grant':'role_grant','group-delete':'group_delete',
+              'user-reset':'user_reset','user-unlock':'user_unlock','user-invite':'user_invite',
+              'user-mfa-reset':'user_mfa_reset','user-session':'user_session','user-erase':'user_erase', 'policies':'policy_save','policy-preview':'policy_preview'}
+    if kind not in commands:s.fail('NOT_FOUND','관리 작업을 찾을 수 없습니다.',404)
+    response=command(request,'manage_'+commands[kind],id)
+    if kind=='user-invite' and response.status_code==200:
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        from .identity_management import person
+        member=person(request.actor,id)
+        value=json.loads(response.content)
+        value['invitation_url']=request.build_absolute_uri('/activate/'+urlsafe_base64_encode(force_bytes(member.user_id))+'/#'+default_token_generator.make_token(member.user))
+        return value
+    return response

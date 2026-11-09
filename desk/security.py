@@ -10,10 +10,13 @@ SESSION_KEY = 'desk_security_binding'
 
 def binding(person):
     from .services import roles
+    from .permissions import effective,custom_grants
     data = {'person':str(person.id),'org':str(person.organization_id),
             'epoch':str(person.session_epoch),'active':person.active,
             'organization_active':person.organization.active,'user_active':person.user.is_active,
             'roles':sorted(roles(person)),
+            'permissions':sorted(effective(person)),
+            'custom_roles':sorted(str(g.role_id)+':'+str(g.role.row_version) for g in custom_grants(person).select_related('role')),
             'groups':sorted(str(x) for x in person.membership_set.filter(group__active=True).values_list('group_id',flat=True))}
     return hashlib.sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()
 
@@ -26,14 +29,32 @@ def login_event(sender,request,user,**kwargs):
     person=Person.objects.filter(user=user).select_related('organization','user').first()
     if person:
         request.session[SESSION_KEY]=binding(person)
+        from django.utils import timezone
+        from django.db import transaction
+        from .models import Organization, LoginSession
+        from .security_policy import policy
+        request.session['recent_auth_at']=timezone.now().timestamp()
+        if not request.session.session_key:request.session.save()
+        with transaction.atomic():
+            Organization.objects.select_for_update().get(pk=person.organization_id)
+            LoginSession.objects.get_or_create(session_key=request.session.session_key,defaults=dict(organization=person.organization,person=person))
+            sessions=LoginSession.objects.filter(person=person,revoked=False).exclude(session_key=request.session.session_key).order_by('-started_at','-id')
+            ids=list(sessions.values_list('id',flat=True))[max(0,policy(person.organization,'session')['max_sessions']-1):]
+            LoginSession.objects.filter(id__in=ids).update(revoked=True)
     evidence('LOGIN_SUCCESS',person,request)
 
 @receiver(user_logged_out, dispatch_uid='desk.logout_event')
 def logout_event(sender,request,user,**kwargs):
     person=Person.objects.filter(user=user).first() if user and user.pk else None
+    if request and request.session.session_key:
+        from .models import LoginSession
+        LoginSession.objects.filter(session_key=request.session.session_key).update(revoked=True)
     evidence('LOGOUT',person,request)
 
 @receiver(user_login_failed, dispatch_uid='desk.login_failure')
 def failure_event(sender,credentials,request=None,**kwargs):
     # Never persist submitted usernames/passwords, tokens, cookies or request bodies.
-    evidence('LOGIN_FAILED',request=request)
+    if request and getattr(request,'_rate_limited',False):
+        if getattr(request,'_rate_limited_first',False):evidence('LOGIN_THROTTLED',getattr(request,'_auth_target_person',None),request)
+        return
+    evidence('LOGIN_FAILED',getattr(request,'_auth_target_person',None) if request else None,request)

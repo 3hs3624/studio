@@ -45,7 +45,7 @@ def detail(request,id):
         history=assets.history_query(p,id)
         c['history_items']=s.page(p,history,request.GET.dict(),lambda h:assets.history_data(h,p),'asset_history:'+str(id))
         if assets.manager(p):
-            c.update(people=Person.objects.filter(organization=p.organization,active=True,user__is_active=True).order_by('display_name'),
+            c.update(people=Person.objects.filter(organization=p.organization,active=True,user__is_active=True).order_by('profile__full_name'),
                      requests=candidates(p))
         from .models import StockAsset,Stockroom,AssetContractLink
         row=StockAsset.objects.filter(asset=a).select_related('stockroom','item').first()
