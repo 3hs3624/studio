@@ -51,13 +51,13 @@ def check():
             assert target.execute('SHOW default_transaction_read_only').fetchone()==('off',)
             assert table_hash(source,'auth_user')==table_hash(target,'auth_user')
             assert catalog(source)==catalog(target)
-            before=table_hash(target,'auth_user')
+            before=table_hash(target,'desk_userprofile')
             # Target can continue independently; retry must not overwrite it.
-            target.execute("UPDATE auth_user SET first_name='after-cutover' WHERE username='temp-admin'")
-            assert table_hash(target,'auth_user')!=before
+            target.execute("UPDATE desk_userprofile SET full_name='after-cutover' WHERE person_id=(SELECT p.id FROM desk_person p JOIN auth_user u ON u.id=p.user_id WHERE u.username='temp-admin')")
+            assert table_hash(target,'desk_userprofile')!=before
         migrate(dsns[0],dsns[1])
         with psycopg.connect(dsns[1]) as target:
-            assert target.execute("SELECT first_name FROM auth_user WHERE username='temp-admin'").fetchone()==('after-cutover',)
+            assert target.execute("SELECT profile.full_name FROM desk_userprofile profile JOIN desk_person p ON p.id=profile.person_id JOIN auth_user u ON u.id=p.user_id WHERE u.username='temp-admin'").fetchone()==('after-cutover',)
         print('Disposable PostgreSQL migration verified: non-superuser restore, exact data/protections, frozen source, writable destination and safe retry.')
     finally:
         with psycopg.connect(admin, autocommit=True) as conn:
