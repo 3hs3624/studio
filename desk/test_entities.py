@@ -93,7 +93,7 @@ class EntityTests(Fixtures, TestCase):
             with self.subTest(fields=fields):
                 self.assertEqual(self.save(fields=fields).status_code,422)
         self.assertEqual(EntityDefinition.objects.count(),0)
-        self.assertEqual(self.post('',dict(code='A',name='A',fields=[],expected_version=0,reason='empty')).status_code,422)
+        self.assertEqual(self.post('',dict(code='A',name='A',fields=[],expected_version=0,reason='empty')).status_code,201)
 
     def test_reference_accepts_only_records_of_published_target_same_org(self):
         target=self.published(code='TARGET')

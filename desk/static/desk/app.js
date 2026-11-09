@@ -11,9 +11,10 @@ document.querySelectorAll('.api-form').forEach(form => {
         const value=key=>row.querySelector('[data-field="'+key+'"]').value;
         const field={key:value('key'),label:value('label'),type:value('type'),required:row.querySelector('[data-field="required"]').checked};
         if(field.type==='choice')field.options=value('options').split(',').map(v=>v.trim()).filter(Boolean);
-        if(field.type==='reference')field.target_entity_id=value('target_entity_id');
+        if(field.type==='reference'){field.target_entity_id=value('target_entity_id');field.relationship=value('relationship');}
         payload.fields.push(field);
       });
+      payload.junction=inputs.has('junction_enabled')?{left_field:inputs.get('junction_left'),right_field:inputs.get('junction_right')}:{};
     } else if (kind === 'entity-publish') {
       payload.reason=inputs.get('reason');
     } else if (kind === 'entity-record') {
@@ -21,7 +22,7 @@ document.querySelectorAll('.api-form').forEach(form => {
       payload.values={};
       form.querySelectorAll('[data-entity-value]').forEach(input=>{
         if(input.value==='')return;
-        let value=input.value;
+        let value=input.multiple?Array.from(input.selectedOptions).map(option=>option.value).filter(Boolean):input.value;
         if(input.dataset.type==='integer')value=Number(value);
         if(input.dataset.type==='boolean')value=value==='true';
         payload.values[input.dataset.key]=value;
@@ -68,6 +69,7 @@ document.querySelectorAll('.api-form').forEach(form => {
         if(field.type==='choice')field.options=value('options').split(',').map(s=>s.trim()).filter(Boolean);
         payload.fields.push(field);
       });
+      payload.junction=inputs.has('junction_enabled')?{left_field:inputs.get('junction_left'),right_field:inputs.get('junction_right')}:{};
     } else if (kind === 'request-create') {
       payload.catalog_version_id=form.dataset.catalogVersion;
       payload.values={};
@@ -269,18 +271,23 @@ if (entityFields) {
     control('required').checked=field.required === true;
     control('options').value=(field.options || []).join(', ');
     control('target_entity_id').value=field.target_entity_id || '';
+    control('relationship').value=field.relationship || 'many_to_one';
     function updateType(){
-      row.querySelector('[data-choice-settings]').hidden=control('type').value!=='choice';
-      row.querySelector('[data-reference-settings]').hidden=control('type').value!=='reference';
+      control('options').disabled=control('type').value!=='choice';
+      row.querySelectorAll('[data-reference-settings]').forEach(input=>{input.disabled=control('type').value!=='reference';});
     }
     control('type').addEventListener('change',updateType);
     row.querySelector('[data-remove-field]').addEventListener('click',()=>row.remove());
+    row.querySelectorAll('[data-move-field]').forEach(button=>button.addEventListener('click',()=>{
+      if(button.dataset.moveField==='-1' && row.previousElementSibling)row.previousElementSibling.before(row);
+      if(button.dataset.moveField==='1' && row.nextElementSibling)row.nextElementSibling.after(row);
+    }));
     updateType();
     entityFields.appendChild(fragment);
   }
   const initial=JSON.parse(document.getElementById('entity-draft-fields').textContent);
   initial.forEach(addEntityField);
-  if(!initial.length)addEntityField({key:'title',label:'제목',type:'text',required:true});
+
   document.getElementById('add-entity-field').addEventListener('click',()=>addEntityField());
 }
 

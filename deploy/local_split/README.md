@@ -101,3 +101,7 @@ docker compose config 전체 출력은 비밀값을 포함할 수 있으므로 �
 
 자동 검증은 .github/workflows/local-docker.yml에 있습니다.
 새 설치, HTTPS/CSRF 로그인, 3개 업무 영역, API·정적 파일, 운영콘솔 권한, 런타임 DB 권한, 컨테이너 재생성 후 계정 보존, 재시작 및 백업 아카이브를 확인합니다.
+
+## 기존 설치 업데이트
+
+엔티티 기본 필드·관계 기능 및 기존 데이터 보존 업데이트 절차는 [엔티티 관리 안내](../../docs/entity-relationships.md#로컬-docker-업데이트)를 참고하십시오. 기존 설정·계정 파일과 Docker 볼륨을 유지하며 소스만 업데이트합니다.

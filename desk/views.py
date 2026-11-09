@@ -335,6 +335,7 @@ def plugin_management(request):
 def entity_management(request, id=None):
     from .models import EntityDefinition, EntityRecord
     from .entity_service import get_entity, entity_data, latest
+    from .entities.system_fields import system_fields, RELATIONSHIPS, multiple
     from .entities.fields import FIELD_TYPES
     try:
         c = context(request)
@@ -348,6 +349,7 @@ def entity_management(request, id=None):
             for field in schema.fields:
                 item = dict(field)
                 if field['type'] == 'reference':
+                    item['multiple'] = multiple(field)
                     choices = EntityRecord.objects.filter(
                         organization=actor.organization, entity_id=field['target_entity_id']).select_related('schema_version').order_by('-created_at')[:100]
                     item['reference_choices'] = [
@@ -361,7 +363,12 @@ def entity_management(request, id=None):
                 lines = []
                 for field in record.schema_version.fields:
                     value = record.values.get(field['key'])
-                    if field['type'] == 'reference' and value:
+                    if field['type'] == 'reference' and isinstance(value, list):
+                        related = EntityRecord.objects.filter(id__in=value, organization=actor.organization,
+                                                              entity_id=field['target_entity_id'])
+                        labels = {str(item.id): next((str(v) for v in item.values.values() if isinstance(v, str) and v.strip()), str(item.id)) for item in related}
+                        value = ', '.join(labels.get(item, item) for item in value)
+                    elif field['type'] == 'reference' and value:
                         related = EntityRecord.objects.filter(id=value, organization=actor.organization,
                             entity_id=field['target_entity_id']).first()
                         if related:
@@ -371,8 +378,14 @@ def entity_management(request, id=None):
                         value = '예' if value else '아니오'
                     lines.append(field['label'] + ': ' + (str(value) if value is not None else '—'))
                 records.append({'id':record.id, 'version':record.schema_version.version,
-                                'values':'\n'.join(lines), 'created_at':record.created_at})
-        c.update(entity=entity, entity_info=entity_data(entity) if entity else None,
+                                'values':'\n'.join(lines), 'created_at':record.created_at,
+                                'created_by':record.created_by.display_name, 'updated_at':record.updated_at,
+                                'updated_by':record.updated_by.display_name, 'row_version':record.row_version,
+                                'links': [dict(direction='→', field=link.field_key, label=next((str(v)[:100] for v in link.target.values.values() if isinstance(v, str) and v.strip()), str(link.target_id))) for link in record.outgoing_links.select_related('target')]
+                                + [dict(direction='←', field=link.field_key, label=next((str(v)[:100] for v in link.source.values.values() if isinstance(v, str) and v.strip()), str(link.source_id))) for link in record.incoming_links.select_related('source')]})
+        c.update(show_editor=bool(entity or request.GET.get('new') == '1'), system_fields=system_fields(),
+                 relationships=[{'key':key, 'label':label} for key,label in RELATIONSHIPS.items()],
+                 entity=entity, entity_info=entity_data(entity) if entity else None,
                  draft_fields=entity.draft_fields if entity else [], schema=schema,
                  schema_fields=schema_fields, records=records, targets=targets,
                  field_types=[{'key':key,'label':value[0]} for key,value in FIELD_TYPES.items()],

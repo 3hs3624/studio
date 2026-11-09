@@ -18,6 +18,7 @@ urlpatterns = [
     path('api/v1/admin/entities/<uuid:id>', api.entity_definition),
     path('api/v1/admin/entities/<uuid:id>/publish', api.entity_publish),
     path('api/v1/admin/entities/<uuid:id>/records', api.entity_records),
+    path('api/v1/admin/entities/<uuid:id>/records/<uuid:record_id>/relations', api.entity_record_relations),
     path('admin/plugins', views.plugin_management),
     path('api/v1/admin/plugins', api.plugins),
     path('api/v1/admin/plugin-runs', api.plugin_runs),

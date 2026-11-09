@@ -2,6 +2,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 ROLES = ['SERVICE_MANAGER', 'AGENT', 'ORG_ADMIN', 'RESOURCE_READER', 'ASSET_MANAGER', 'PROCUREMENT_MANAGER', 'STOCK_MANAGER', 'DEVELOPER', 'SOLUTION_OPERATOR']
 ASSET_STATUSES = ['UNVERIFIED','STOCK','IN_USE','RETIRED']
@@ -526,6 +527,7 @@ class EntityDefinition(Base):
     code = models.CharField(max_length=40)
     name = models.CharField(max_length=200)
     draft_fields = models.JSONField(default=list)
+    draft_junction = models.JSONField(default=dict)
     row_version = models.PositiveIntegerField(default=1)
 
     class Meta:
@@ -538,6 +540,7 @@ class EntitySchemaVersion(Base):
     version = models.PositiveIntegerField()
     name = models.CharField(max_length=200)
     fields = models.JSONField()
+    junction = models.JSONField(default=dict)
     schema_digest = models.CharField(max_length=64)
     published_by = models.ForeignKey(Person, on_delete=models.PROTECT)
     reason = models.CharField(max_length=500)
@@ -553,7 +556,34 @@ class EntityRecord(Base):
     schema_version = models.ForeignKey(EntitySchemaVersion, on_delete=models.PROTECT)
     values = models.JSONField()
     created_by = models.ForeignKey(Person, on_delete=models.PROTECT)
+    updated_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_by = models.ForeignKey(Person, on_delete=models.PROTECT, related_name='updated_entity_records')
+    row_version = models.PositiveIntegerField(default=1, editable=False)
+    junction_left = models.ForeignKey('self', on_delete=models.PROTECT, null=True, editable=False, related_name='left_junctions')
+    junction_right = models.ForeignKey('self', on_delete=models.PROTECT, null=True, editable=False, related_name='right_junctions')
     request_id = models.UUIDField()
 
     class Meta:
         indexes = [models.Index(fields=['organization', 'entity', '-created_at'], name='entity_records_org_entity')]
+        constraints = [
+            models.UniqueConstraint(fields=['entity', 'junction_left', 'junction_right'], name='entity_junction_pair'),
+            models.CheckConstraint(condition=Q(junction_left__isnull=True, junction_right__isnull=True) | Q(junction_left__isnull=False, junction_right__isnull=False), name='entity_junction_both'),
+            models.CheckConstraint(condition=Q(row_version__gte=1), name='entity_record_version_positive'),
+        ]
+
+
+class EntityRecordLink(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    source_entity = models.ForeignKey(EntityDefinition, on_delete=models.PROTECT)
+    source = models.ForeignKey(EntityRecord, on_delete=models.PROTECT, related_name='outgoing_links')
+    target = models.ForeignKey(EntityRecord, on_delete=models.PROTECT, related_name='incoming_links')
+    field_key = models.CharField(max_length=40)
+    scalar = models.BooleanField(default=True)
+    exclusive = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['source', 'field_key', 'target'], name='entity_link_pair'),
+            models.UniqueConstraint(fields=['source', 'field_key'], condition=Q(scalar=True), name='entity_link_single_source'),
+            models.UniqueConstraint(fields=['source_entity', 'field_key', 'target'], condition=Q(exclusive=True), name='entity_link_single_target'),
+        ]

@@ -1,20 +1,35 @@
 {% extends base_template|default:'desk/base.html' %}
 {% block title %}엔티티 관리 · 통합 IT 운영{% endblock %}
 {% block content %}
-<div class="page-heading"><div><h1>엔티티 관리</h1><p class="muted">업무 데이터의 필드·참조 관계를 정의하고 버전별로 게시합니다.</p></div><a class="secondary" href="{{ entity_base }}">새 엔티티</a></div>
-<section class="panel plugin-panel"><h2>엔티티 목록</h2><div class="entity-links">{% for item in entity_list %}<a href="{{ entity_base }}/{{ item.id }}">{{ item.code }} · {{ item.name }}</a>{% empty %}<p>등록된 엔티티가 없습니다.</p>{% endfor %}</div></section>
+<div class="page-heading"><div><h1>엔티티 관리</h1><p class="muted">업무 데이터의 필드·참조 관계를 정의하고 버전별로 게시합니다.</p></div><a class="secondary" href="{{ entity_base }}?new=1">새 엔티티</a></div>
+{% if not show_editor %}
+<section class="panel plugin-panel"><h2>엔티티 목록</h2><p class="muted">엔티티를 생성한 후 선택하여 필드와 관계를 구성합니다.</p>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>이름</th><th>업무 필드 수</th><th>구성 버전</th><th>시스템 필드</th></tr></thead><tbody>
+{% for item in entity_list %}<tr><td><a href="{{ entity_base }}/{{ item.id }}">{{ item.code }}</a></td><td>{{ item.name }}</td><td>{{ item.draft_fields|length }}</td><td>{{ item.row_version }}</td><td>자동 제공 · 8개</td></tr>{% empty %}<tr><td colspan="5">등록된 엔티티가 없습니다. 새 엔티티를 생성하십시오.</td></tr>{% endfor %}</tbody></table></div></section>
+{% else %}<a href="{{ entity_base }}">← 엔티티 목록</a>
+<section class="panel plugin-panel"><details><summary>시스템 필드 · 자동 제공 8개 (읽기 전용)</summary><p class="muted">업무 필드와 별도로 서버에서 관리합니다. 생성 시 수정자·수정일도 기록합니다. 데이터 등록은 현재 추가 방식이며 기존 데이터의 수정·삭제는 지원하지 않습니다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드 코드</th><th>이름</th><th>유형</th><th>관리</th></tr></thead><tbody>{% for field in system_fields %}<tr><td>{{ field.key }}</td><td>{{ field.label }}</td><td>{{ field.type }}</td><td>시스템 · 변경 불가</td></tr>{% endfor %}</tbody></table></div></details></section>
 <section class="panel plugin-panel"><h2>{% if entity %}{{ entity.code }} 초안 · 설정 버전 {{ entity.row_version }}{% else %}새 정의{% endif %}</h2>
 <form class="api-form" data-kind="entity-save" data-detail-base="{{ entity_base }}" data-version="{{ entity.row_version|default:0 }}" data-url="/api/v1/admin/entities">
 {% csrf_token %}<div class="form-error error" role="alert" tabindex="-1" hidden></div>
 <div class="form-row"><label>엔티티 코드<input name="code" value="{{ entity.code }}" pattern="[A-Za-z][A-Za-z0-9_]{0,39}" maxlength="40" {% if entity %}readonly{% endif %} required></label><label>이름<input name="name" value="{{ entity.name }}" maxlength="200" required></label></div>
-<h3>필드 구성</h3><div id="entity-fields"></div><button class="secondary" type="button" id="add-entity-field">필드 추가</button>
+{% if entity %}<h3>필드 구성</h3><p class="muted">한 행에 하나의 업무 필드를 구성합니다. 참조 필드는 대상 엔티티와 관계 유형을 선택하십시오.</p>
+<div class="table-wrap entity-grid-wrap"><table class="entity-grid"><thead><tr><th>필드 코드</th><th>표시 이름</th><th>유형</th><th>필수</th><th>선택지</th><th>참조 대상</th><th>관계</th><th>순서 · 제거</th></tr></thead><tbody id="entity-fields"></tbody></table></div>
+<button class="secondary" type="button" id="add-entity-field">필드 추가</button>
+<details class="entity-junction"><summary>중간 엔티티 설정</summary><p class="muted">양쪽 필수 다대일 참조 필드를 지정하면 같은 연결 쌍의 중복 등록을 막습니다. 역할·유효일 등 추가 필드도 함께 구성할 수 있습니다.</p>
+<label><input type="checkbox" name="junction_enabled" {% if entity.draft_junction %}checked{% endif %}> 중간 엔티티로 사용</label><div class="form-row"><label>왼쪽 참조 필드 코드<input name="junction_left" value="{{ entity.draft_junction.left_field }}" maxlength="40"></label><label>오른쪽 참조 필드 코드<input name="junction_right" value="{{ entity.draft_junction.right_field }}" maxlength="40"></label></div></details>
+{% else %}<p class="muted">생성 후 필드 구성 화면으로 이동합니다. 기본 시스템 필드 8개는 자동 제공됩니다.</p>{% endif %}
 <label>변경 사유<input name="reason" maxlength="500" required></label><div class="plugin-actions"><button class="primary" type="submit">초안 저장</button></div></form>
 {{ draft_fields|json_script:'entity-draft-fields' }}
-<template id="entity-field-template"><fieldset data-entity-field-row><legend>필드</legend><div class="form-row"><label>식별자<input data-field="key" pattern="[a-z][a-z0-9_]{0,39}" maxlength="40" required></label><label>표시 이름<input data-field="label" maxlength="100" required></label></div>
-<div class="form-row"><label>종류<select data-field="type">{% for type in field_types %}<option value="{{ type.key }}">{{ type.label }}</option>{% endfor %}</select></label><label class="entity-required"><input type="checkbox" data-field="required">필수 입력</label></div>
-<label data-choice-settings hidden>선택지 · 쉼표로 구분<input data-field="options"></label>
-<label data-reference-settings hidden>대상 엔티티<select data-field="target_entity_id"><option value="">게시된 엔티티 선택</option>{% for target in targets %}<option value="{{ target.id }}">{{ target.code }} · {{ target.name }}</option>{% endfor %}</select></label>
-<div class="plugin-actions"><button class="secondary" type="button" data-remove-field>필드 제거</button></div></fieldset></template></section>
+{% if entity %}<template id="entity-field-template"><tr data-entity-field-row>
+<td><input aria-label="필드 코드" data-field="key" pattern="[a-z][a-z0-9_]{0,39}" maxlength="40" required></td>
+<td><input aria-label="표시 이름" data-field="label" maxlength="100" required></td>
+<td><select aria-label="필드 유형" data-field="type">{% for type in field_types %}<option value="{{ type.key }}">{{ type.label }}</option>{% endfor %}</select></td>
+<td><input aria-label="필수 입력" type="checkbox" data-field="required"></td>
+<td><input aria-label="선택지 · 쉼표 구분" data-field="options" data-choice-settings></td>
+<td><select aria-label="참조 대상" data-reference-settings data-field="target_entity_id"><option value="">대상 선택</option>{% for target in targets %}<option value="{{ target.id }}">{{ target.code }} · {{ target.name }}</option>{% endfor %}</select></td>
+<td><select aria-label="연결 관계" data-reference-settings data-field="relationship">{% for relation in relationships %}<option value="{{ relation.key }}">{{ relation.label }}</option>{% endfor %}</select></td>
+<td class="entity-row-actions"><div><button type="button" class="secondary" data-move-field="-1" aria-label="위로 이동">↑</button><button type="button" class="secondary" data-move-field="1" aria-label="아래로 이동">↓</button><button class="secondary" type="button" data-remove-field>제거</button></div></td></tr></template>{% endif %}</section>
 {% if entity %}
 <section class="panel plugin-panel"><h2>정의 게시</h2><p class="muted">게시된 정의는 변경되지 않습니다. 새 정의를 게시해도 기존 데이터의 적용 버전은 유지됩니다.</p>
 <form class="api-form" data-kind="entity-publish" data-version="{{ entity.row_version }}" data-url="/api/v1/admin/entities/{{ entity.id }}/publish">{% csrf_token %}<div class="form-error error" role="alert" tabindex="-1" hidden></div><label>게시 사유<input name="reason" maxlength="500" required></label><div class="plugin-actions"><button class="primary" type="submit">저장된 초안 게시</button></div></form>
@@ -25,10 +40,11 @@
 {% for field in schema_fields %}<label>{{ field.label }}{% if field.required %} *{% endif %}
 {% if field.type == 'choice' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.required %}required{% endif %}><option value="">선택</option>{% for value in field.options %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select>
 {% elif field.type == 'boolean' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.required %}required{% endif %}><option value="">선택</option><option value="true">예</option><option value="false">아니오</option></select>
-{% elif field.type == 'reference' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.required %}required{% endif %}><option value="">대상 선택</option>{% for record in field.reference_choices %}<option value="{{ record.id }}">{{ record.label }}</option>{% endfor %}</select>
+{% elif field.type == 'reference' %}<select data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" {% if field.multiple %}multiple size="4"{% endif %} {% if field.required %}required{% endif %}><option value="">대상 선택</option>{% for record in field.reference_choices %}<option value="{{ record.id }}">{{ record.label }}</option>{% endfor %}</select>
 {% elif field.type == 'textarea' %}<textarea data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" maxlength="4000" {% if field.required %}required{% endif %}></textarea>
 {% else %}<input data-entity-value data-key="{{ field.key }}" data-type="{{ field.type }}" type="{% if field.type == 'integer' %}number{% elif field.type == 'date' %}date{% else %}text{% endif %}" {% if field.type == 'integer' %}step="1" min="-9007199254740991" max="9007199254740991"{% endif %} maxlength="4000" {% if field.required %}required{% endif %}>{% endif %}</label>{% endfor %}
 <div class="plugin-actions"><button class="primary" type="submit">데이터 등록</button></div></form></section>
-<section class="panel plugin-panel"><h2>최근 데이터</h2><div class="table-wrap"><table><thead><tr><th>식별자</th><th>정의 버전</th><th>값</th></tr></thead><tbody>{% for record in records %}<tr><td>{{ record.id }}</td><td>V{{ record.version }}</td><td><pre class="plugin-preview-output">{{ record.values }}</pre></td></tr>{% empty %}<tr><td colspan="3">데이터가 없습니다.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel plugin-panel"><h2>최근 데이터</h2><div class="table-wrap"><table><thead><tr><th>식별자</th><th>정의 버전</th><th>값</th><th>생성자 · 수정자</th><th>데이터 버전</th><th>연결 관계</th></tr></thead><tbody>{% for record in records %}<tr><td>{{ record.id }}</td><td>V{{ record.version }}</td><td><pre class="plugin-preview-output">{{ record.values }}</pre></td><td>{{ record.created_by }} · {{ record.updated_by }}<br>{{ record.updated_at }}</td><td>{{ record.row_version }}</td><td><details><summary>연결 보기</summary>{% for link in record.links %}<p>{{ link.direction }} {{ link.field }} · {{ link.label }}</p>{% empty %}<p>연결 없음</p>{% endfor %}</details></td></tr>{% empty %}<tr><td colspan="6">데이터가 없습니다.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endif %}{% endif %}
+{% endif %}
 {% endblock %}

@@ -83,7 +83,7 @@ class ConsoleTests(Fixtures, TestCase):
         self.client.force_login(self.admin.user)
         response=self.client.get('/console/entities/'+str(entity.id))
         self.assertContains(response,'data-detail-base="/console/entities"')
-        self.assertContains(response,'href="/console/entities/'+str(entity.id)+'"')
+        self.assertContains(response,'href="/console/entities"')
         self.assertNotContains(response,'Foreign hidden')
         self.assertEqual(self.client.get('/console/entities/'+str(foreign.id)).status_code,404)
         self.assertEqual(response.context['org'],self.org)

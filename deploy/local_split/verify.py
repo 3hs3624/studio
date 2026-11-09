@@ -12,11 +12,11 @@ ROOT = Path(__file__).resolve().parent
 
 
 def verify():
-    settings = dict(line.split('=', 1) for line in (ROOT / '.env.ap').read_text().splitlines()
+    settings = dict(line.split('=', 1) for line in (ROOT / '.env.ap').read_text(encoding='utf-8').splitlines()
                     if '=' in line)
     base = f"https://{settings['APP_HOST']}:{settings['HTTPS_PORT']}"
     context = ssl.create_default_context(cafile=str(ROOT / 'local-root.crt'))
-    accounts = json.loads((ROOT / 'access/accounts.json').read_text())['accounts']
+    accounts = json.loads((ROOT / 'access/accounts.json').read_text(encoding='utf-8'))['accounts']
     if len(accounts) != 5:
         raise RuntimeError('Expected five provisioned local accounts.')
     for account in accounts:

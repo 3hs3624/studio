@@ -455,3 +455,11 @@ def entity_records(request, id):
     entity = get_entity(request.actor, id)
     return {'items':[record_data(r) for r in EntityRecord.objects.filter(
         organization=request.actor.organization, entity=entity).select_related('schema_version').order_by('-created_at','-id')[:50]]}
+
+
+@endpoint(['GET'])
+def entity_record_relations(request, id, record_id):
+    from .entity_service import get_entity, related_data
+    s.require_console(request.actor)
+    query(request, [])
+    return related_data(request.actor, get_entity(request.actor, id), record_id)
