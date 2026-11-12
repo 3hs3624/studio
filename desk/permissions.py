@@ -1,5 +1,6 @@
 """Fixed capability catalogue; operators compose roles, never executable rules."""
 PERMISSIONS = {
+ 'delivery.read':('소스·배포 현황 조회','조직'),'delivery.manage':('소스·배포 현황 수신','조직'),
  'console.access':('운영 콘솔 접근','조직'),
  'entity.read':('엔티티 조회','조직'),'entity.write':('엔티티 구성·게시·데이터 등록','조직'),
  'plugin.read':('플러그인 조회','조직'),'plugin.configure':('플러그인 설정','조직'),'plugin.execute':('플러그인 실행·번호 발급','조직'),
@@ -10,7 +11,7 @@ PERMISSIONS = {
  'procurement.manage':('구매 관리','조직'),'inventory.manage':('재고 관리','조직'),
  'users.manage':('사용자·개인정보 관리','조직'),'iam.manage':('역할·그룹 관리','조직'),'security.manage':('보안 정책 관리','조직'),
 }
-CORE = {'console.access','entity.read','entity.write','plugin.read','plugin.configure','plugin.execute','code.read','code.write'}
+CORE = {'delivery.read','delivery.manage','console.access','entity.read','entity.write','plugin.read','plugin.configure','plugin.execute','code.read','code.write'}
 BUILTIN = {
  'ORG_ADMIN': CORE | {'users.manage','iam.manage','security.manage'},
  'DEVELOPER': CORE, 'SOLUTION_OPERATOR': CORE,

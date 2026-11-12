@@ -762,3 +762,40 @@ class LoginSession(Base):
     started_at = models.DateTimeField(default=timezone.now)
     last_seen_at = models.DateTimeField(default=timezone.now)
     revoked = models.BooleanField(default=False)
+
+
+class DeliveryRecord(Base):
+    """Provider observations only; viewing records never starts a build or deploy."""
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    provider = models.CharField(max_length=10, choices=[('github','GitHub'),('jenkins','Jenkins')])
+    external_id = models.CharField(max_length=200)
+    kind = models.CharField(max_length=10, choices=[('SOURCE','소스 변경'),('DEPLOYMENT','배포')])
+    title = models.CharField(max_length=300)
+    repository = models.CharField(max_length=200, blank=True)
+    branch = models.CharField(max_length=200, blank=True)
+    revision = models.CharField(max_length=64, blank=True)
+    service = models.CharField(max_length=200, blank=True)
+    version = models.CharField(max_length=200, blank=True)
+    environment = models.CharField(max_length=80, blank=True)
+    status = models.CharField(max_length=24)
+    build_status = models.CharField(max_length=12, default='NONE')
+    external_actor = models.CharField(max_length=150, blank=True)
+    external_url = models.URLField(max_length=1000)
+    occurred_at = models.DateTimeField()
+    received_at = models.DateTimeField(default=timezone.now)
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['organization','provider','external_id'],name='delivery_provider_id'),
+            models.CheckConstraint(condition=Q(kind='SOURCE',provider='github',status__in=['OPEN','APPROVED','MERGED','CLOSED','COMMITTED']) | Q(kind='DEPLOYMENT',provider='jenkins',status__in=['QUEUED','AWAITING_APPROVAL','RUNNING','SUCCESS','FAILED','CANCELLED']),name='delivery_kind_status'),
+            models.CheckConstraint(condition=Q(build_status__in=['NONE','QUEUED','RUNNING','SUCCESS','FAILED']),name='delivery_build_status'),
+        ]
+        indexes = [models.Index(fields=['organization','kind','-occurred_at'],name='delivery_recent')]
+
+
+class DeliveryImport(Base):
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    provider = models.CharField(max_length=10, choices=[('github','GitHub'),('jenkins','Jenkins')])
+    imported_by = models.ForeignKey(Person, on_delete=models.PROTECT)
+    record_count = models.PositiveIntegerField()
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(provider__in=['github','jenkins']),name='delivery_import_provider')]

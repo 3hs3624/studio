@@ -1,10 +1,14 @@
 from django.urls import path
 from django.contrib.auth.views import LogoutView
-from desk import identity_views, account_views, api, views, asset_views, inventory_api, purchasing_views
+from desk import delivery_views, identity_views, account_views, api, views, asset_views, inventory_api, purchasing_views
 
 handler404 = 'desk.api.not_found'
 handler500 = 'desk.api.server_error'
 urlpatterns = [
+    path('resources/changes',delivery_views.listing,{'kind':'SOURCE'}),
+    path('resources/changes/<uuid:id>',delivery_views.listing,{'kind':'SOURCE'}),
+    path('resources/deployments',delivery_views.listing,{'kind':'DEPLOYMENT'}),
+    path('resources/deployments/<uuid:id>',delivery_views.listing,{'kind':'DEPLOYMENT'}),
     path('console/users', identity_views.users),
     path('console/users/<str:id>', identity_views.users),
     path('console/roles', identity_views.roles),

@@ -45,6 +45,7 @@ def context(request):
             'unread_notifications':visible_notifications(p).filter(read_at__isnull=True).count()}
     from .navigation import navigation, console_navigation, LEGACY_CONSOLE_PATHS
     from django.conf import settings
+    c['delivery_can_read']=s.has_permission(p,'delivery.read')
     c.update(navigation(request.path,c))
     from .security_policy import policy,state
     from django.utils import timezone
@@ -82,6 +83,8 @@ def context(request):
 @login_required
 def home(request):
     c=context(request)
+    from .delivery import overview
+    c.update(overview(c['actor']))
     return render(request,'desk/portal.html',c)
 
 @login_required
@@ -330,12 +333,9 @@ def system_home(request,system):
             recent_items=[{'title':a.name,'number':a.asset_no,'status':a.status,'url':'/assets/'+str(a.id)} for a in qs.order_by('-created_at')[:6]],recent_title='최근 등록 자산',
             primary_url='/assets/new' if c['is_asset_manager'] else '/my-assets',primary_label='자산 등록' if c['is_asset_manager'] else '내 지급 자산')
     else:
-        qs=s.resources_query(p,ConfigurationItem)
-        c.update(metrics=[{'label':'조회 가능한 구성항목','value':qs.count(),'url':'/cis'},
-            {'label':'자원 유형','value':qs.values('type').distinct().count(),'url':'/cis'},
-            {'label':'상태 분류','value':qs.values('status').distinct().count(),'url':'/cis'}],
-            recent_items=[{'title':a.name,'number':a.ci_no,'status':a.status,'url':'/cis/'+str(a.id)} for a in qs.order_by('-created_at')[:6]],recent_title='최근 등록 구성항목',
-            primary_url='/cis',primary_label='구성항목 조회')
+        from .delivery import overview
+        c.update(overview(p))
+        return render(request,'desk/delivery-home.html',c)
     labels={'NEW':'신규','ASSIGNED':'배정','IN_PROGRESS':'처리 중','PENDING':'대기','RESOLVED':'해결','CLOSED':'종료','UNVERIFIED':'미검증','STOCK':'보관','IN_USE':'사용 중','RETIRED':'폐기','ACTIVE':'운영 중','INACTIVE':'비활성'}
     for item in c['recent_items']: item['status_label']=labels.get(item['status'],item['status'])
     return render(request,'desk/system-home.html',c)

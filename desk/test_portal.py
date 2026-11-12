@@ -39,8 +39,8 @@ class IntegratedPortalTests(Fixtures,TestCase):
         self.assertEqual(response.context['metrics'][0]['value'],1)
         self.assertNotContains(response,'Private laptop')
         self.assertNotContains(response,'Secret beta')
-        response=self.client.get('/systems/resource')
-        self.assertEqual(response.context['metrics'][0]['value'],1)
+        response=self.client.get('/cis')
+        self.assertEqual(response.context['active_area'],'service')
         self.assertNotContains(response,'Hidden resource')
         self.assertNotContains(response,'Other organization resource')
         response=self.client.get('/systems/service')
@@ -50,8 +50,8 @@ class IntegratedPortalTests(Fixtures,TestCase):
         response=self.client.get('/systems/service')
         self.assertEqual(response.context['metrics'][0]['value'],1)
         self.assertContains(response,'Peer private incident')
-        response=self.client.get('/systems/resource')
-        self.assertEqual(response.context['metrics'][0]['value'],2)
+        response=self.client.get('/cis')
+        self.assertContains(response,'Hidden resource')
         self.assertNotContains(response,'Other organization resource')
 
     def test_employee_menus_and_existing_routes_remain_available(self):

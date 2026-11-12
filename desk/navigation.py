@@ -2,15 +2,15 @@
 SYSTEMS = [
     {'key':'service','name':'IT서비스','code':'ITSM','url':'/systems/service','description':'요청부터 승인, 장애 해결과 서비스 품질까지','icon':'01'},
     {'key':'asset','name':'IT자산','code':'ITAM','url':'/systems/asset','description':'구매부터 입고, 지급과 반납, 폐기까지','icon':'02'},
-    {'key':'resource','name':'IT자원','code':'ITRM','url':'/systems/resource','description':'구성항목과 서비스에 연결된 운영 자원','icon':'03'},
+    {'key':'resource','name':'IT자원','code':'ITRM','url':'/systems/resource','description':'소스 형상과 빌드·배포 현황 관리','icon':'03'},
 ]
 
 
 def navigation(path, c):
     key = 'portal'
-    if path.startswith(('/systems/service','/portal/','/work/','/catalog','/approvals')): key='service'
+    if path.startswith(('/systems/service','/portal/','/work/','/catalog','/approvals','/cis')): key='service'
     elif path.startswith(('/systems/asset','/assets','/my-assets','/procurement','/inventory','/contracts')): key='asset'
-    elif path.startswith(('/systems/resource','/cis')): key='resource'
+    elif path.startswith(('/systems/resource','/resources/')): key='resource'
     elif path.startswith('/admin/'): key='admin'
     elif path.startswith('/notifications'): key='notifications'
     groups=[]
@@ -20,12 +20,13 @@ def navigation(path, c):
     if key=='service':
         group('서비스 이용', [('서비스 현황','/systems/service',True),('서비스 카탈로그','/catalog',True),('내 서비스 요청','/portal/requests',True),('내 장애 요청','/portal/incidents',True),('서비스 승인함','/approvals',True)])
         group('서비스 운영',[('장애 처리','/work/incidents',c['can_work']),('서비스 요청 처리','/work/requests',c['can_work'])])
+        group('구성 관리',[('구성항목 대장','/cis',True)])
     elif key=='asset':
         group('자산 관리',[('자산 현황','/systems/asset',True),('자산 대장','/assets',True),('내 지급 자산','/my-assets',True)])
         group('구매 · 계약',[('구매 요청 · 승인','/procurement/requisitions',c['can_purchase_request']),('발주 · 입고','/procurement/orders',c['can_stock_read']),('공급업체 · 계약','/contracts',c['can_contract_read'])])
         group('재고 관리',[('창고 · 재고','/inventory',c['can_stock_read']),('재고 이동 이력','/inventory/movements',c['can_stock_read'])])
     elif key=='resource':
-        group('구성 관리',[('자원 현황','/systems/resource',True),('구성항목 대장','/cis',True)])
+        group('소스 · 배포 관리',[('자원 현황','/systems/resource',True),('소스 변경 목록','/resources/changes',c.get('delivery_can_read',False)),('배포 목록','/resources/deployments',c.get('delivery_can_read',False))])
     else:
         group('나의 업무',[('내 서비스 요청','/portal/requests',True),('서비스 승인함','/approvals',True),('내 지급 자산','/my-assets',True)])
     all_links=[link for section in groups for link in section['links']]
