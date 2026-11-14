@@ -89,3 +89,5 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 .process-form-grid>label>input,.process-form-grid>label>select{margin:0}
 .process-readonly{min-height:48px}
 .process-content-panel .primary,.process-content-panel .secondary{max-width:100%;white-space:normal}
+
+.process-content-panel .api-form>button{margin-top:16px}
