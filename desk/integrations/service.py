@@ -289,7 +289,7 @@ def process_one(id=None):
     if not candidate:return None
     with transaction.atomic():
         Organization.objects.select_for_update().get(pk=candidate.organization_id)
-        job=IntegrationJob.objects.select_for_update().select_related('version__definition__run_as','version__credential','organization').get(pk=candidate.id)
+        job=IntegrationJob.objects.select_for_update(of=('self',)).select_related('version__definition__run_as','version__credential','organization').get(pk=candidate.id)
         now=timezone.now()
         if job.status=='RUNNING' and job.lease_until and job.lease_until<now:
             job.status='QUEUED' if job.version.settings['effect']=='READ' else 'UNKNOWN';job.error_code='WORKER_LEASE_EXPIRED';job.save(update_fields=['status','error_code'])
@@ -310,7 +310,7 @@ def process_one(id=None):
     except (MappingError,ValueError,KeyError,TypeError):failure=TransportError('INVALID_REQUEST_OR_RESPONSE')
     except Exception:failure=TransportError('CREDENTIAL_OR_EXECUTION_ERROR')
     with transaction.atomic():
-        Organization.objects.select_for_update().get(pk=job.organization_id);job=IntegrationJob.objects.select_for_update().select_related('version__definition__run_as').get(pk=job.id)
+        Organization.objects.select_for_update().get(pk=job.organization_id);job=IntegrationJob.objects.select_for_update(of=('self',)).select_related('version__definition__run_as').get(pk=job.id)
         if job.status!='RUNNING':return job
         job.http_status=status or (failure.status if failure else None)
         if failure:

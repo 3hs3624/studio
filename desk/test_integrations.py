@@ -86,3 +86,27 @@ class IntegrationTests(Fixtures,TestCase):
         repeated=self.client.post(url,json.dumps({'id':'x'}),content_type='application/json',HTTP_IDEMPOTENCY_KEY='one',HTTP_AUTHORIZATION='Bearer '+token);self.assertEqual(result.json()['id'],repeated.json()['id'])
         changed=self.client.post(url,json.dumps({'id':'different'}),content_type='application/json',HTTP_IDEMPOTENCY_KEY='one',HTTP_AUTHORIZATION='Bearer '+token);self.assertEqual(changed.status_code,409)
         for record in IdempotencyRecord.objects.all():self.assertNotIn(token,json.dumps(record.response_body))
+
+from django.test import TransactionTestCase
+from django.db import connection,close_old_connections
+from unittest import skipUnless
+from concurrent.futures import ThreadPoolExecutor
+
+@skipUnless(connection.vendor=='postgresql','PostgreSQL row locking required')
+class IntegrationConcurrencyTests(Fixtures,TransactionTestCase):
+    def setUp(self):
+        self.build_fixtures();IntegrationNetworkPolicy.objects.create(organization=self.org,allowed_hosts=['api.example.com'],updated_by=self.admin)
+        definition=IntegrationDefinition.objects.create(organization=self.org,code='RACE',name='큐 선점 검증',protocol='REST',run_as=self.admin,updated_by=self.admin)
+        settings,_=service.validate(self.admin,definition,dict(url='https://api.example.com/x',method='GET',input_fields=[],response_mapping={'answer':{'path':'value'}}))
+        version=IntegrationVersion.objects.create(organization=self.org,definition=definition,version=1,settings=settings,published_by=self.admin,reason='동시성 검증',digest='x')
+        self.job=service.enqueue(self.admin,version,{},'race')
+    def test_two_workers_claim_same_job_once(self):
+        import time
+        def response(*args):time.sleep(.1);return 200,b'{"value":"ok"}','application/json'
+        def process(_):
+            close_old_connections()
+            try:return service.process_one(self.job.id).status
+            finally:close_old_connections()
+        with patch('desk.integrations.service.request',side_effect=response) as call,ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(process,[1,2]));self.assertEqual(call.call_count,1)
+        self.job.refresh_from_db();self.assertEqual(self.job.status,'SUCCESS');self.assertEqual(self.job.attempts,1)
