@@ -1,0 +1,15 @@
+# Adopt only the existing web service; retain existing secret values and external Neon DB.
+services:
+  - type: web
+    name: studio-itsm-preview-2zzi
+    runtime: docker
+    repo: https://github.com/3hs3624/studio
+    branch: main
+    plan: free
+    region: singapore
+    autoDeployTrigger: 'off'
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: /app/deploy/start-render
+    healthCheckPath: /login/
+    numInstances: 1
