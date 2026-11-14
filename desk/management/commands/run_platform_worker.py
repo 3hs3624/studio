@@ -1,7 +1,7 @@
 """Run durable integration jobs and workflow timers outside HTTP requests."""
 import signal,time,uuid
 from django.core.management.base import BaseCommand
-from django.db import transaction,close_old_connections
+from django.db import transaction,close_old_connections,connection
 from django.utils import timezone
 from desk.models import ProcessTask,ProcessRun,Organization
 from desk.integrations.service import process_one
@@ -17,7 +17,10 @@ class Command(BaseCommand):
             stopped=True
         for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,stop)
         while not stopped:
-            close_old_connections();job=process_one();progress=bool(job)
+            # A single-cycle caller may own a transaction (e.g. integration tests).
+            # Closing its connection would discard that transaction on PostgreSQL.
+            if not connection.in_atomic_block:close_old_connections()
+            job=process_one();progress=bool(job)
             due=list(ProcessTask.objects.filter(kind='WAIT',status='OPEN',due_at__lte=timezone.now(),run__status__in=['ACTIVE','BLOCKED']).values_list('run_id',flat=True).distinct()[:50])
             for id in due:
                 with transaction.atomic():
