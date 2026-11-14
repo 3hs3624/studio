@@ -119,3 +119,9 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 .console-tab-body td .api-form+.api-form{margin-top:24px;padding-top:24px;border-top:1px solid #c6c6c6}
 .console-tab-body td .api-form>button{margin-top:16px;white-space:normal}
 @media(max-width:700px){.console-tab-body{padding:16px}.console-tab-body .process-node{padding:16px}.console-tab-body .api-form>button{width:100%}}
+/* Plain panels also contain standalone forms outside the tabbed editors. */
+.panel:not(.form-panel):not(.plugin-panel)>form:not(.filter){margin:24px;min-width:0;max-width:calc(100% - 48px)}
+.panel:not(.form-panel):not(.plugin-panel)>form:not(.filter)>button{margin-top:16px;max-width:100%;white-space:normal}
+.panel:not(.form-panel):not(.plugin-panel)>h3{margin-left:24px;margin-right:24px}
+.panel:not(.form-panel):not(.plugin-panel)>nav.tabs{margin:16px 24px}
+@media(max-width:700px){.panel:not(.form-panel):not(.plugin-panel)>form:not(.filter){margin:16px;max-width:calc(100% - 32px)}.panel:not(.form-panel):not(.plugin-panel)>h3{margin-left:16px;margin-right:16px}.panel:not(.form-panel):not(.plugin-panel)>nav.tabs{margin:16px}}
