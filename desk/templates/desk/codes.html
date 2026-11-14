@@ -1,5 +1,5 @@
 {% extends base_template|default:'desk/base.html' %}
-{% block title %}공통코드 관리 · 통합 IT 운영{% endblock %}
+{% block title %}공통코드 관리 · 통합 ITSM{% endblock %}
 {% block content %}
 <div class="page-heading"><div><h1>공통코드 관리</h1><p class="muted">현재 조직의 엔티티와 업무에서 공통으로 사용하는 선택값을 관리합니다.</p></div><a class="secondary" href="/console/codes">코드 그룹 목록</a></div>
 {% if not code_group %}<section class="panel"><h2>코드 그룹</h2><div class="table-wrap"><table><thead><tr><th>그룹 코드</th><th>이름</th><th>사용 여부</th><th>관리 범위</th></tr></thead><tbody>{% for item in code_groups %}<tr><td><a href="/console/codes/{{ item.id }}">{{ item.code }}</a></td><td>{{ item.name }}</td><td>{% if item.active %}사용{% else %}중지{% endif %}</td><td>{% if item.locked %}시스템 필수 · 변경 제한{% else %}조직 공통{% endif %}</td></tr>{% empty %}<tr><td colspan="4">등록된 코드 그룹이 없습니다.</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}

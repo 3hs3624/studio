@@ -1,5 +1,5 @@
 {% extends base_template|default:'desk/base.html' %}
-{% block title %}플러그인 관리 · 통합 IT 운영{% endblock %}
+{% block title %}플러그인 관리 · 통합 ITSM{% endblock %}
 {% block content %}
 <div class="page-heading"><div><h1>{% if plugin %}{{ plugin.manifest.name }}{% else %}플러그인 관리{% endif %}</h1><p class="muted">설치된 기능을 선택하여 설정·기능 미리보기·실행 이력을 관리합니다.</p></div>{% if plugin %}<a class="secondary" href="/console/plugins">플러그인 목록</a>{% endif %}</div>
 {% if not plugin %}

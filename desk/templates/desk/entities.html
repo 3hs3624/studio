@@ -1,5 +1,5 @@
 {% extends base_template|default:'desk/base.html' %}
-{% block title %}엔티티 관리 · 통합 IT 운영{% endblock %}
+{% block title %}엔티티 관리 · 통합 ITSM{% endblock %}
 {% block content %}
 <div class="page-heading"><div><h1>엔티티 관리</h1><p class="muted">업무 데이터의 필드·참조 관계를 정의하고 버전별로 게시합니다.</p></div>{% if can_entity_write %}<a class="secondary" href="{{ entity_base }}?new=1">새 엔티티</a>{% endif %}</div>
 {% if not show_editor %}

@@ -17,7 +17,8 @@ class IntegratedPortalTests(Fixtures,TestCase):
             self.assertEqual(self.client.get(url).status_code,302)
         response=self.client.post('/login/',{'username':'employee','password':'test-only-password'})
         self.assertRedirects(response,'/')
-        self.assertContains(self.client.get('/'),'IT 운영을 하나의 흐름으로.')
+        self.assertContains(self.client.get('/'),'통합 ITSM')
+        self.assertNotContains(self.client.get('/'),'IT 운영을 하나의 흐름으로.')
 
     def test_system_navigation_does_not_mix_asset_and_service_menus(self):
         self.client.force_login(self.manager.user)
