@@ -1,0 +1,9 @@
+{% extends 'desk/base.html' %}{% block content %}<a class="back" href="/assets">← 자산 목록</a>
+<div class="page-heading"><div><p class="eyebrow">ASSET REGISTRATION</p><h1>자산 등록</h1><p class="muted">등록한 자산은 보관 상태로 시작하며 등록 이력이 남습니다.</p></div></div>
+<section class="panel form-panel"><form class="api-form" data-kind="asset-create" data-url="/api/v1/assets">{% csrf_token %}<div class="form-error error" role="alert" tabindex="-1" hidden></div>
+<div class="form-row"><div><label for="asset-no">자산번호</label><input id="asset-no" name="asset_no" maxlength="80" required></div><div><label for="asset-name">자산 이름</label><input id="asset-name" name="name" maxlength="200" required></div></div>
+<div class="form-row"><div><label for="manufacturer">제조사</label><input id="manufacturer" name="manufacturer" maxlength="200"></div><div><label for="asset-model">모델</label><input id="asset-model" name="model" maxlength="200"></div></div>
+<div class="form-row"><div><label for="serial-number">일련번호</label><input id="serial-number" name="serial_number" maxlength="200"></div><div><label for="asset-location">보관 위치</label><input id="asset-location" name="location" maxlength="200" required></div></div>
+<label for="registration-reason">등록 사유</label><textarea name="reason" id="registration-reason" maxlength="10000" rows="3" required></textarea>
+<label class="check setting-check"><input type="checkbox" name="portal_visible">조직 직원에게 기본 자산 정보 공개</label><p class="sla-footnote">공개해도 다른 직원의 사용자 정보와 지급 이력은 표시하지 않습니다.</p>
+<button class="primary full">자산 등록</button></form></section>{% endblock %}

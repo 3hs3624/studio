@@ -1,6 +1,6 @@
 # 첫 구현 API 계약 — v0.1
 
-기준 경로 /api/v1. JSON/UTF-8. 조직은 검증된 세션의 활성 조직에서 결정하며 body의 organization_id·requested_by·author_id·priority·status를 신뢰하거나 허용하지 않습니다. 인증 제공자 선택 전이므로 로그인 프로토콜·콜백 경로는 후속 ADR에서 확정합니다.
+기준 경로 /api/v1. JSON/UTF-8. 조직은 검증된 세션의 활성 조직에서 결정하며 body의 organization_id·requested_by·author_id·priority·status를 신뢰하거나 허용하지 않습니다. 첫 구현은 Django 로컬 비밀번호 인증·세션입니다. 로그인은 /login/, 로그아웃은 POST /logout/이며 SSO는 후속입니다. [ADR-001](../adr/001-application-stack.md)을 참조하십시오.
 
 ## 공통 규약
 
@@ -8,7 +8,7 @@
 - 조회 권한 없는 단일 리소스는 404, 존재를 알아도 되는 리소스의 금지 동작은 403입니다.
 - 오류: {"error":{"code":"VERSION_CONFLICT","message":"최신 내용을 다시 확인하십시오.","fields":{},"request_id":"uuid"}}. 원문 stack·내부 기록을 노출하지 않습니다.
 - 400 형식/알 수 없는 필드, 401 미인증, 403 금지, 404 비공개·없음, 409 버전/상태/멱등키 충돌, 422 필드·업무 검증 실패, 429 제한. 오류에도 request_id 제공.
-- 모든 생성·명령은 Idempotency-Key(1~128자) 필수. 동일 조직·사용자·operation·key에서 같은 본문은 원 응답 재생, 다른 본문은 409. 최소 24시간 보장. 권한은 재생 시에도 다시 검사합니다.
+- 모든 생성·명령은 Idempotency-Key(1~128자) 필수. 동일 조직·사용자·operation·key에서 같은 본문은 업무 결과 스냅샷 재생, 다른 본문은 409. 최소 24시간 보장. 권한은 재생 시에도 다시 검사하며 내부 필드·연결 대상·allowed_actions는 현재 권한으로 제한합니다. 구현 차이는 [개발 안내](../development.md)를 참조하십시오.
 - 갱신·전이·접근 관리 명령은 expected_version 양의 정수 필수. 서버 현재 버전과 다르면 409. 생성은 version=1.
 - 목록은 limit 기본 25·최대 100, opaque cursor. 응답 {"items":[],"next_cursor":null}. 응답 시각은 UTC RFC3339.
 - unknown field는 거부하고 문자열은 공백만 입력을 거부합니다. 응답은 역할별 allowlist 직렬화합니다.
@@ -66,3 +66,19 @@ Idempotency-Key: demo-resolve-001
 {"action":"RESOLVE","resolution":"네트워크 설정을 복구하고 연결을 확인했습니다.","expected_version":4}
 
 응답: 200, status RESOLVED, version 5. action은 START/WAIT/RESUME/RESOLVE/CLOSE/REOPEN. WAIT·REOPEN에는 reason, RESOLVE에는 resolution을 요구합니다. 전체 전이표는 [화면 명세](screens.md)를 따릅니다. 예시는 합성 데이터이며 실행된 요청이 아닙니다.
+
+## SLA 확장
+
+티켓 응답의 sla 필드, 달력·정책 게시, 알림 조회·읽음 API는 [SLA 추가 명세](../sla.md)를 따릅니다. 기존 API 경로·상태 전이·인증 규약은 유지합니다.
+
+## 서비스 요청 확장
+
+서비스 카탈로그·요청·승인 API는 [추가 명세](../service-requests.md)를 따릅니다. 기존 장애 API는 INCIDENT만 다루며 SERVICE_REQUEST를 조회·변경하지 않습니다. 알림 응답에는 kind,label,ticket_url을 추가했고 기존 SLA 필드는 유지합니다.
+
+## 자산 수명주기 확장
+
+자산 등록·수정·상태 처리·지급/반납 이력·본인 자산 조회 API와 역할·버전 규칙은 [자산 추가 명세](../assets.md)를 따릅니다. 기존 Asset 조회 경로는 유지하며 상태·버전을 추가하고 민감 필드를 권한별로 제한합니다.
+
+## 구매·계약·재고 확장
+
+공급업체·계약·구매 요청·발주·입고·창고·품목·수량·이동·출고·자산 계약 API와 권한·버전 규칙은 [추가 계약](../purchasing-inventory.md)에 정의합니다. 동일한 세션·CSRF·Idempotency-Key·조직 범위 규칙을 적용합니다.

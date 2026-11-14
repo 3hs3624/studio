@@ -1,0 +1,1 @@
+<nav class="console-tabs" aria-label="관리 항목" role="tablist">{% for tab in tabs %}<a role="tab" href="{{ tab.url }}" aria-selected="{% if active_tab == tab.key %}true{% else %}false{% endif %}" {% if active_tab == tab.key %}aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}</nav>

@@ -1,0 +1,59 @@
+name: Local AP DB Docker
+on:
+  push:
+    branches: [main, feature/incident-workflow]
+    paths:
+      - 'deploy/local_split/**'
+      - '.dockerignore'
+      - '.github/workflows/local-docker.yml'
+      - 'requirements.txt'
+      - 'deploy/requirements.txt'
+      - 'config/**'
+      - 'desk/**'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  split-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check isolated configuration and refusal to overwrite credentials
+        run: python -m unittest discover -s deploy/local_split/tests -v
+      - name: Configure isolated local installation
+        run: |
+          python deploy/local_split/control.py configure --name itsm-docker-ci
+          python deploy/local_split/control.py check-config
+      - name: Build and start independent AP and DB projects
+        run: |
+          chmod 600 deploy/local_split/start.py
+          python deploy/local_split/control.py up
+      - name: Verify HTTPS login, permissions, DB role separation and static assets
+        run: python deploy/local_split/control.py verify
+      - name: Verify credentials and database persistence across full recreation
+        run: |
+          sha256sum deploy/local_split/access/accounts.json deploy/local_split/.env.ap deploy/local_split/.env.db > /tmp/local-credential-digests
+          python deploy/local_split/control.py stop
+          python deploy/local_split/control.py up
+          sha256sum --check --status /tmp/local-credential-digests
+          python deploy/local_split/control.py verify
+      - name: Verify DB and AP restart and backup archive
+        run: |
+          python deploy/local_split/control.py restart
+          python deploy/local_split/control.py verify
+          python deploy/local_split/control.py backup
+      - name: Show isolated service status
+        if: always()
+        run: python deploy/local_split/control.py status
+      - name: Show local service errors
+        if: failure()
+        run: |
+          docker compose --env-file deploy/local_split/.env.ap -f deploy/local_split/ap.compose.yaml logs --no-color --tail 80 initialize web proxy
+      - name: Stop containers without deleting data volumes
+        if: always()
+        run: python deploy/local_split/control.py stop

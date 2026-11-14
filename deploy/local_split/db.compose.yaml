@@ -1,0 +1,29 @@
+name: ${STACK_NAME:-itsm-local}-db
+services:
+  database:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: itsm_local
+      POSTGRES_USER: itsm_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?Run configure first}
+      APP_PASSWORD: ${DB_PASSWORD:?Run configure first}
+      MIGRATION_PASSWORD: ${MIGRATION_PASSWORD:?Run configure first}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/10-app.sql:ro
+    networks:
+      backend:
+        aliases: [local-db]
+    healthcheck:
+      test: [CMD, pg_isready, -U, itsm_owner, -d, itsm_local]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+volumes:
+  data:
+    name: ${STACK_NAME:-itsm-local}-db-data
+networks:
+  backend:
+    name: ${STACK_NAME:-itsm-local}-backend

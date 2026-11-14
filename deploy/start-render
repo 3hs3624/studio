@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+port="${PORT:-10000}"
+case "$port" in
+    ''|*[!0-9]*) echo 'PORT must be numeric.' >&2; exit 1 ;;
+esac
+if [ -n "${NEON_MIGRATION_TARGET_URL:-}" ]; then
+    python deploy/migrate_postgres.py
+    export DATABASE_URL="$NEON_MIGRATION_TARGET_URL"
+fi
+python manage.py migrate --noinput
+python manage.py bootstrap_local_access --password-prefix STUDIO_LOCAL_
+if [ "${VERIFY_HOSTED_ACCESS:-0}" = '1' ]; then
+    python manage.py check_hosted_access
+fi
+if [ -n "${STUDIO_SR_PROVISION_ORGANIZATION_ID:-}" ]; then
+    python manage.py setup_service_request --organization-id "$STUDIO_SR_PROVISION_ORGANIZATION_ID"
+fi
+exec python deploy/run_services.py
