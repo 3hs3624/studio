@@ -1,0 +1,10 @@
+{% if not delivery_allowed %}<p class="muted">소스·배포 현황 조회 권한이 필요합니다. 관리자에게 역할 배정을 요청하십시오.</p>
+{% else %}
+<div class="metric-grid delivery-metrics">{% for metric in delivery_metrics %}<a class="metric-card" href="{{ metric.url }}"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></a>{% endfor %}</div>
+<p class="muted">{% for provider in delivery_providers %}{{ provider.label }}: {% if provider.last %}수동 수신 · {{ provider.last.created_at|date:'Y-m-d H:i' }} ({{ provider.last.record_count }}건){% else %}연계 미설정{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+<p class="muted">자동 연계·실제 빌드/배포 실행은 아직 연결되지 않았습니다. 아래 목록은 수신된 현황을 표시합니다.</p>
+<h3>최근 소스 변경 <a href="/resources/changes">전체 보기 →</a></h3>
+<div class="table-wrap"><table><thead><tr><th>저장소 · 브랜치</th><th>변경 제목 · PR/커밋</th><th>변경 계정</th><th>검토 상태</th><th>빌드</th><th>변경일</th></tr></thead><tbody>{% for item in delivery_changes %}<tr><td>{{ item.repository }}<br><small>{{ item.branch }}</small></td><td><a href="{{ item.detail_url }}">{{ item.title }}</a><br><small>{{ item.external_id }} · {{ item.revision|truncatechars:15 }}</small></td><td>{{ item.external_actor|default:'—' }}</td><td>{{ item.status_label }}</td><td>{{ item.build_label }}</td><td>{{ item.occurred_at|date:'Y-m-d H:i' }}</td></tr>{% empty %}<tr><td colspan="6">수신된 소스 변경이 없습니다. GitHub 연계 데이터를 준비해 주십시오.</td></tr>{% endfor %}</tbody></table></div>
+<h3>최근 배포 <a href="/resources/deployments">전체 보기 →</a></h3>
+<div class="table-wrap"><table><thead><tr><th>서비스</th><th>배포 버전</th><th>대상 환경</th><th>승인·실행 상태</th><th>배포 계정</th><th>배포일</th></tr></thead><tbody>{% for item in delivery_deployments %}<tr><td><a href="{{ item.detail_url }}">{{ item.service }}</a></td><td>{{ item.version }}</td><td>{{ item.environment }}</td><td>{{ item.status_label }}</td><td>{{ item.external_actor|default:'—' }}</td><td>{{ item.occurred_at|date:'Y-m-d H:i' }}</td></tr>{% empty %}<tr><td colspan="6">수신된 배포가 없습니다. Jenkins 연계 데이터를 준비해 주십시오.</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}

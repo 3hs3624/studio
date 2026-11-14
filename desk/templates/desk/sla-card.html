@@ -1,0 +1,7 @@
+{% load desk_tags %}{% if ticket.sla %}
+<section class="panel form-panel sla-card"><p class="eyebrow">SERVICE LEVEL</p><h2>서비스 처리 목표</h2>
+<p class="muted">{{ ticket.sla.policy_name }} · 버전 {{ ticket.sla.policy_version }}</p>
+<div class="sla-goal"><div class="section-heading"><strong>응답</strong><span class="badge {{ ticket.sla.response.state }}">{{ ticket.sla.response.state|sla_label }}</span></div><progress max="100" value="{{ ticket.sla.response.percent }}" aria-label="응답 목표 시간 사용률"></progress><p>응답 기한 <strong>{{ ticket.sla.response.due_at|local_time }}</strong></p><small>목표 {{ ticket.sla.response.target_minutes }} 업무분</small></div>
+<div class="sla-goal"><div class="section-heading"><strong>해결</strong><span class="badge {{ ticket.sla.resolution.state }}">{{ ticket.sla.resolution.state|sla_label }}</span></div><progress max="100" value="{{ ticket.sla.resolution.percent }}" aria-label="해결 목표 시간 사용률"></progress><p>{% if ticket.sla.resolution.paused %}대기 중에는 해결 시간이 정지됩니다.{% else %}해결 기한 <strong>{{ ticket.sla.resolution.due_at|local_time }}</strong>{% endif %}</p><small>목표 {{ ticket.sla.resolution.target_minutes }} 업무분</small></div>
+<p class="sla-footnote">계산 달력 {{ ticket.sla.timezone }}<br>기한은 한국시간(KST)으로 표시됩니다.</p></section>
+{% else %}<section class="panel form-panel"><h2>서비스 처리 목표</h2><p class="muted">접수 당시 적용된 SLA 정책이 없습니다.</p></section>{% endif %}

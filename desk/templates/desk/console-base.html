@@ -1,0 +1,12 @@
+{% extends 'desk/base.html' %}
+{% block body_class %}console-mode{% endblock %}
+{% block sidebar %}
+<aside class="sidebar console-sidebar" id="primary-navigation"><a class="brand" href="/console">운영 콘솔</a><p class="brand-caption">구성 · 설정 관리</p>
+<div class="nav-area"><span class="nav-area-mark">CONSOLE</span><strong>운영 콘솔</strong><small>구성 · 설정 · 시스템 관리</small></div>
+<nav aria-label="운영 콘솔 메뉴"><div class="nav-group"><p class="nav-label">콘솔</p><a href="/console" {% if request.path == '/console' %}aria-current="page"{% endif %}>콘솔 홈<span aria-hidden="true">›</span></a></div>
+{% for group in console_groups %}<div class="nav-group"><p class="nav-label">{{ group.title }}</p>{% for link in group.links %}<a href="{{ link.url }}" {% if link.active %}aria-current="page"{% endif %}>{{ link.label }}<span aria-hidden="true">›</span></a>{% endfor %}</div>{% endfor %}</nav>
+<div class="sidebar-bottom"><span class="live-dot"></span>{{ org.name }}<small>{{ console_environment_label }} · 현재 조직의 설정 관리</small></div></aside>
+{% endblock %}
+{% block header_navigation %}<div class="console-heading"><strong>운영 콘솔</strong><span class="environment-badge {{ console_environment_key }}">{{ console_environment_label }}</span></div>{% endblock %}
+{% block workspace_crumb %}<div class="workspace-crumb"><a href="/console">운영 콘솔</a><span>/</span><span>구성 · 설정 관리</span><span class="workspace-org">{{ org.name }}</span></div>{% endblock %}
+{% block footer_content %}<strong>운영 콘솔</strong><span>운영 콘솔 · 구성 · 설정 · 시스템 관리</span>{% endblock %}

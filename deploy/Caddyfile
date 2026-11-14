@@ -1,0 +1,15 @@
+http://{$APP_HOST:localhost} {
+    redir https://{$APP_HOST:localhost}:{$EXTERNAL_HTTPS_PORT:8443}{uri} permanent
+}
+
+{$APP_HOST:localhost} {
+    handle_path /static/* {
+        root * /srv/static
+        file_server
+    }
+    handle {
+        reverse_proxy web:8000 {
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}

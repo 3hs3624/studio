@@ -1,0 +1,1 @@
+<div class="assignment-options">{% for row in departments %}{% if row.active %}<label class="check"><input type="checkbox" name="department_ids" value="{{ row.id }}" {% if row.id|stringformat:'s' in selected_departments %}checked{% endif %}>{{ row.indent }}{{ row.name }}</label>{% endif %}{% empty %}<p>등록된 부서가 없습니다.</p>{% endfor %}</div>

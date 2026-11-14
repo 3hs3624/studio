@@ -1,0 +1,43 @@
+# External Neon PostgreSQL. Retain the original Render DB until separately retired.
+services:
+  - type: web
+    name: studio-itsm-preview
+    runtime: docker
+    plan: free
+    region: singapore
+    autoDeployTrigger: 'off'
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /app/deploy/start-render
+    healthCheckPath: /login/
+    envVars:
+      - key: DEBUG
+        value: '0'
+      - key: AUTH_MODE
+        value: local
+      - key: SERVE_STATIC
+        value: '1'
+      - key: TRUST_PROXY_HEADERS
+        value: '1'
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: STUDIO_LOCAL_TEMP_ADMIN_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_MANAGER_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_EMPLOYEE_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_ASSETS_PASSWORD
+        generateValue: true
+      - key: STUDIO_LOCAL_TEMP_BUYER_PASSWORD
+        generateValue: true
+
+databases:
+  - name: studio-itsm-preview-db
+    plan: free
+    region: singapore
+    postgresMajorVersion: '16'
+    databaseName: studio
+    user: studio
+    ipAllowList: []

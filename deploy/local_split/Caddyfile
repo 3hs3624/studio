@@ -1,0 +1,9 @@
+http://{$APP_HOST} {
+    redir https://{$APP_HOST}:{$EXTERNAL_HTTPS_PORT}{uri} permanent
+}
+https://{$APP_HOST} {
+    tls internal
+    reverse_proxy web:8000 {
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
