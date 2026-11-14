@@ -14,6 +14,8 @@ WORKDIR /app
 COPY --chown=${APP_UID}:${APP_GID} . /app
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then PIP_CERT=/run/secrets/proxy_ca pip install --no-cache-dir -r deploy/requirements.txt; else pip install --no-cache-dir -r deploy/requirements.txt; fi \
+    && test -r /app/deploy/run_services.py \
+    && python -m py_compile /app/deploy/run_services.py /app/desk/management/commands/run_platform_worker.py \
     && groupadd -g "$APP_GID" studio && useradd -u "$APP_UID" -g studio -m studio \
     && DEBUG=1 SERVE_STATIC=1 python manage.py collectstatic --noinput \
     && chown -R studio:studio /app/staticfiles \

@@ -66,6 +66,9 @@ jobs:
       - run: docker compose -f deploy/compose.yaml up -d --build --wait --wait-timeout 180
       - run: docker compose -f deploy/compose.yaml cp proxy:/data/caddy/pki/authorities/local/root.crt /tmp/studio-root.crt
       - run: python deploy/check_access.py --ca /tmp/studio-root.crt
+      - name: Verify web image runs the platform worker
+        run: |
+          docker compose -f deploy/compose.yaml exec -T web python -c "from pathlib import Path; assert any(b'run_platform_worker' in p.read_bytes().split(bytes([0])) for p in Path('/proc').glob('[0-9]*/cmdline') if p.is_file()), 'Platform worker is not running'; print('Verified live platform worker in the web image.')"
       - name: Verify PostgreSQL cutover on disposable databases
         run: |
           docker compose -f deploy/compose.yaml cp deploy/check_migration.py web:/tmp/check_migration.py

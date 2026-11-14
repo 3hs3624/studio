@@ -29,6 +29,7 @@ services:
     environment:
       DEBUG: '0'
       AUTH_MODE: local
+      PORT: '8000'
       DB_ENGINE: postgresql
       DB_NAME: studio
       DB_USER: studio
@@ -37,7 +38,7 @@ services:
     volumes: ["./access:/run/access", "static:/app/staticfiles"]
     depends_on:
       database: {condition: service_healthy}
-    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py bootstrap_local_access --credential-file /run/access/temporary-accounts.json && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 60 --access-logfile - --error-logfile -"]
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py bootstrap_local_access --credential-file /run/access/temporary-accounts.json && exec python deploy/run_services.py"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/login/',headers={'Host': __import__('os').environ['APP_HOST'], 'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r,timeout=3)"]
       interval: 10s
