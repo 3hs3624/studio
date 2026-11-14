@@ -68,3 +68,25 @@ class ServiceRequestSetupTests(Fixtures,TestCase):
         self.client.force_login(self.people['worker1'].user)
         response=self.client.post('/api/v1/process-runs/start',json.dumps(dict(version_id=self.setup['workflow_version_id'],title='우회 시도',values={'title':'우회','description':'카탈로그 경유 안 함'})),content_type='application/json',HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex)
         self.assertEqual(response.status_code,422);self.assertEqual(response.json()['error']['code'],'CATALOG_REQUIRED')
+
+    def test_system_admin_sees_all_requests_and_can_edit_workflow_draft(self):
+        from .models import RoleDataPolicy,ProcessDefinition
+        from . import catalog
+        from .access_cache import clear
+        run=self.submit()
+        RoleDataPolicy.objects.create(organization=self.org,role_key='ORG_ADMIN',menu_key='requests',read_scope='SELF',write_scope='SELF')
+        RoleDataPolicy.objects.create(organization=self.org,role_key='ORG_ADMIN',menu_key='workflow-inbox',read_scope='SELF',write_scope='SELF')
+        clear()
+        self.assertTrue(catalog.request_query(self.admin).filter(id=run.ticket_id).exists())
+        self.assertFalse(catalog.request_query(self.admin).exclude(organization=self.org).exists())
+        self.client.force_login(self.admin.user)
+        self.assertContains(self.client.get('/portal/requests'),str(run.ticket_id))
+        self.assertEqual(self.client.get('/processes/'+str(run.id)).status_code,200)
+        definition=ProcessDefinition.objects.get(id=self.setup['workflow_id'])
+        self.assertContains(self.client.get('/console/workflows/'+str(definition.id)),'초안 저장')
+        draft=dict(definition.draft)
+        response=self.client.post('/api/v1/processes/save/'+str(definition.id),json.dumps(dict(code=definition.code,kind='WORKFLOW',name='서비스요청 수정',graph=draft,active=True,expected_version=definition.row_version,reason='관리자 초안 수정 검증')),content_type='application/json',HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex)
+        self.assertEqual(response.status_code,200,response.content)
+        definition.refresh_from_db();run.refresh_from_db()
+        self.assertEqual(definition.name,'서비스요청 수정')
+        self.assertEqual(run.version_id,definition.published_id)

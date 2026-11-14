@@ -19,6 +19,9 @@ def departments(person,subtree=False):
     return list(values)
 
 def restrict(person,key,query,owner,assignment=None,write=False):
+    # System administrators retain organization-wide SR/workflow audit visibility.
+    if not write and key in ('requests','workflow-inbox') and any(row['key']=='ORG_ADMIN' for row in role_rows(person)):
+        return query.filter(organization_id=person.organization_id)
     entries=policies(person,key)
     if not entries:return query
     condition=Q(pk__in=[])

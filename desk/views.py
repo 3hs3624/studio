@@ -248,7 +248,7 @@ def request_listing(request,work=False,approvals=False):
         c=context(request)
         if work and not c['can_work']:
             s.fail('FORBIDDEN','처리 권한이 없습니다.',403)
-        qs=catalog.request_query(c['actor'],'queue' if work else 'mine')
+        qs=catalog.request_query(c['actor'],'visible' if c['is_admin'] and not work else 'queue' if work else 'mine')
         if approvals:
             qs=catalog.pending_approval_requests(c['actor'])
         state=request.GET.get('status','')

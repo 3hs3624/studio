@@ -63,3 +63,18 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 .system-card>h2{padding-right:61px}
 .system-card>.system-features{margin-bottom:0}
 @media(max-width:1150px){.system-card>.system-icon{right:16px}}
+
+/* Shared spacing for plain content panels, without insetting full-width tables. */
+.panel:not(.form-panel):not(.plugin-panel):not(.collapsible-panel)>p{margin:16px 24px 24px;overflow-wrap:anywhere}
+.panel:not(.form-panel):not(.plugin-panel)>h2{margin-left:24px;margin-right:24px;padding-top:24px}
+.panel:not(.form-panel):not(.plugin-panel)>a.primary,.panel:not(.form-panel):not(.plugin-panel)>a.secondary,.panel:not(.form-panel):not(.plugin-panel)>button{margin:0 24px 24px;max-width:calc(100% - 48px);white-space:normal}
+.detail-grid>div,.detail-grid>aside{min-width:0}
+.collapsible-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:16px;list-style:none;cursor:pointer;padding:24px;font-size:16px;font-weight:600}
+.collapsible-panel>summary::-webkit-details-marker{display:none}
+.collapsible-panel>summary::after{content:'＋';flex:none;font-size:20px}
+.collapsible-panel[open]>summary::after{content:'−'}
+.collapsible-panel>summary:focus-visible{outline:2px solid #0f62fe;outline-offset:-2px}
+.collapsible-panel>.panel-body{padding:0 24px 24px;overflow-wrap:anywhere}
+.collapsible-panel .form-footer{gap:12px;flex-wrap:wrap}
+.collapsible-panel .form-footer select{min-width:0;max-width:100%}
+@media(max-width:700px){.panel:not(.form-panel):not(.plugin-panel):not(.collapsible-panel)>p{margin:16px}.panel:not(.form-panel):not(.plugin-panel)>h2{margin-left:16px;margin-right:16px;padding-top:16px}.panel:not(.form-panel):not(.plugin-panel)>a.primary,.panel:not(.form-panel):not(.plugin-panel)>a.secondary,.panel:not(.form-panel):not(.plugin-panel)>button{margin:0 16px 16px;max-width:calc(100% - 32px)}.collapsible-panel>summary{padding:16px}.collapsible-panel>.panel-body{padding:0 16px 16px}}

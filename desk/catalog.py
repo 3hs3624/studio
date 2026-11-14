@@ -168,6 +168,9 @@ def request_staff(p,t):
 
 def request_query(p,scope='visible'):
     qs=Ticket.objects.filter(organization=p.organization,type='SERVICE_REQUEST').select_related('service_request','group','assignee','requested_by','request_approval')
+    # System administrators audit all requests within their own organization.
+    if 'ORG_ADMIN' in s.roles(p):
+        return qs.filter(requested_by=p) if scope=='mine' else qs
     from .data_access import restrict
     qs=restrict(p,'requests',qs,'requested_by','assignee_id')
     if scope=='mine':
