@@ -81,7 +81,7 @@ class CatalogTests(CatalogFixtures,TestCase):
         for actor in (self.employee,self.manager,self.admin):
             with self.assertRaises(s.BusinessError) as error:
                 self.decision(r,p=actor)
-            self.assertEqual(error.exception.status,404 if actor==self.admin else 403)
+            self.assertEqual(error.exception.status,403)  # Admin may view, but only the designated approver may decide.
         self.assertTrue(catalog.request_data(self.peer,catalog.get_request(self.peer,uuid.UUID(r['id'])))['can_decide'])
 
     def test_self_approval_and_inactive_approver_block_submission(self):
