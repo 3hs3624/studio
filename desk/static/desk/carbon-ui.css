@@ -78,3 +78,14 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 .collapsible-panel .form-footer{gap:12px;flex-wrap:wrap}
 .collapsible-panel .form-footer select{min-width:0;max-width:100%}
 @media(max-width:700px){.panel:not(.form-panel):not(.plugin-panel):not(.collapsible-panel)>p{margin:16px}.panel:not(.form-panel):not(.plugin-panel)>h2{margin-left:16px;margin-right:16px;padding-top:16px}.panel:not(.form-panel):not(.plugin-panel)>a.primary,.panel:not(.form-panel):not(.plugin-panel)>a.secondary,.panel:not(.form-panel):not(.plugin-panel)>button{margin:0 16px 16px;max-width:calc(100% - 32px)}.collapsible-panel>summary{padding:16px}.collapsible-panel>.panel-body{padding:0 16px 16px}}
+
+/* Workflow cards inset the entire body, including forms and read-only fields. */
+.process-content-panel{display:flow-root;overflow-wrap:anywhere}
+.process-content-panel>:last-child{margin-bottom:0}
+.process-content-panel>.api-form+.api-form,.process-content-panel>details{margin-top:24px;padding-top:24px;border-top:1px solid #e0e0e0}
+.process-content-panel>details>summary{cursor:pointer;padding:8px 0;margin-bottom:16px}
+.process-form-grid{min-width:0;margin:16px 0 24px;gap:24px}
+.process-form-grid>label{min-width:0;margin:0;display:flex;flex-direction:column;gap:8px;overflow-wrap:anywhere}
+.process-form-grid>label>input,.process-form-grid>label>select{margin:0}
+.process-readonly{min-height:48px}
+.process-content-panel .primary,.process-content-panel .secondary{max-width:100%;white-space:normal}
