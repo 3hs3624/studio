@@ -50,8 +50,12 @@ def inbox(request,id=None):
                 task.children=ProcessRun.objects.filter(organization=actor.organization,id__in=task.child_ids).select_related('version__definition')
                 node=next(n for n in run.graph['nodes'] if n['key']==task.node_key)
                 task.output_fields=[{**field,'value':run.data.get(field['key'],''),'required':True,'read_only':False} for field in run.graph.get('fields',[]) if field['key'] in node.get('output_mapping',{})]
-                task.screen_columns=node.get('screen',{}).get('columns',2)
+                screen=node.get('screen') or run.graph.get('screen') or {}
+                task.screen_columns=screen.get('columns',2)
+                task.screen_layout_mode=screen.get('layout',{}).get('mode','sections')
                 task.fields=engine.task_fields(actor,run,node,task,task.can_act)
+                from .screen_layout import visible_groups
+                task.screen_groups=visible_groups(screen,task.fields)
             c.update(process_run=run,run_tasks=tasks,run_events=run.events.select_related('actor').order_by('created_at','id'),can_manage_process=allowed(actor,'workflow.manage'),can_cancel_process=run.started_by_id==actor.id or allowed(actor,'workflow.manage'),reassign_people=Person.objects.filter(organization=actor.organization,active=True,user__is_active=True).select_related('profile'),run_parent=run.parent_task.run if run.parent_task_id else None)
         else:
             query=ProcessRun.objects.filter(organization=actor.organization).select_related('version__definition','started_by')

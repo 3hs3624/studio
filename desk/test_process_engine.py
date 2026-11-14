@@ -115,3 +115,59 @@ class ProcessEngineTests(Fixtures,TestCase):
         with patch('desk.management.commands.run_platform_worker.timezone.now',return_value=timezone.now()+timedelta(seconds=2)):
             call_command('run_platform_worker',once=True)
         run.refresh_from_db();self.assertTrue(run.tasks.filter(node_key='work',status='OPEN').exists())
+
+    def test_screen_designer_layout_validated_and_legacy_compatible(self):
+        import copy
+        from . import services as s
+        fs=[dict(key='title',label='제목',type='text',required=True),dict(key='detail',label='상세',type='text',required=False)]
+        graph=dict(fields=fs,read_only=[],columns=3,layout=dict(mode='tabs',groups=[dict(key='basic',label='기본정보',fields=[dict(key='title',span=2,height=1)]),dict(key='details',label='상세정보',fields=[dict(key='detail',span=3,height=3)])]))
+        self.assertEqual(engine.validate(self.admin,'SCREEN',graph)['layout'],graph['layout'])
+        old={k:v for k,v in graph.items() if k!='layout'}
+        self.assertNotIn('layout',engine.validate(self.admin,'SCREEN',old))
+        for modify in [lambda g:g['layout']['groups'][0]['fields'].append(dict(key='detail',span=1,height=1)),lambda g:g['layout']['groups'][0]['fields'][0].update(span=4),lambda g:g['layout']['groups'][0]['fields'][0].update(height=True),lambda g:g['layout']['groups'][0]['fields'][0].update(key='unknown'),lambda g:g['layout']['groups'].pop(),lambda g:g['layout'].update(mode='html'),lambda g:g['layout']['groups'][0].update(script='alert(1)')]:
+            bad=copy.deepcopy(graph);modify(bad)
+            with self.assertRaises(s.BusinessError):engine.validate(self.admin,'SCREEN',bad)
+
+    def test_screen_designer_published_layout_runtime_and_version_pinning(self):
+        from .screen_layout import visible_groups
+        fs=[dict(key='title',label='제목',type='text',required=False),dict(key='secret',label='비밀',type='text',required=False)]
+        graph=dict(fields=fs,read_only=[],columns=3,layout=dict(mode='tabs',groups=[dict(key='basic',label='기본정보',fields=[dict(key='title',span=2,height=2)]),dict(key='details',label='상세정보',fields=[dict(key='secret',span=3,height=1)])]))
+        screen=self.publish(graph,'SCREEN')
+        version=self.publish(self.graph([self.task(screen_version_id=str(screen.id),field_modes={'title':'EDIT','secret':'HIDDEN'})],fs))
+        run=self.start(version);self.client.force_login(self.agent.user);response=self.client.get('/processes/'+str(run.id));self.assertEqual(response.status_code,200)
+        task=response.context['run_tasks'][0];self.assertEqual(task.screen_columns,3);self.assertEqual(task.screen_layout_mode,'tabs')
+        self.assertEqual(len(task.screen_groups),1);self.assertEqual(task.screen_groups[0]['fields'][0]['span'],2)
+        self.assertContains(response,'screen-height-2');self.assertContains(response,'role="tab"');self.assertNotContains(response,'상세정보');self.assertNotContains(response,'data-process-input="secret"')
+        graph['layout']['mode']='sections';graph['layout']['groups'][0]['fields'][0]['span']=1
+        self.publish(graph,'SCREEN',screen.definition)
+        run.refresh_from_db();self.assertEqual(run.graph['nodes'][1]['screen']['layout']['mode'],'tabs')
+        self.assertEqual(run.graph['nodes'][1]['screen']['layout']['groups'][0]['fields'][0]['span'],2)
+        self.assertEqual(visible_groups(screen.graph,[]),[])
+
+    def test_group_limits_override_field_edit_and_reject_forged_values(self):
+        fs=[dict(key='title',label='제목',type='text',required=False),dict(key='secret',label='비밀',type='text',required=False)]
+        graph=dict(fields=fs,read_only=[],columns=3,layout=dict(mode='tabs',groups=[dict(key='basic',label='기본정보',fields=[dict(key='title',span=2,height=1)]),dict(key='details',label='숨김 그룹',fields=[dict(key='secret',span=1,height=1)])]))
+        screen=self.publish(graph,'SCREEN')
+        version=self.publish(self.graph([self.task(screen_version_id=str(screen.id),field_modes={'title':'EDIT','secret':'EDIT'},group_modes={'basic':'READ','details':'HIDDEN'})],fs))
+        run=self.start(version,{'title':'조회 값','secret':'비밀 값'});self.client.force_login(self.agent.user);response=self.client.get('/processes/'+str(run.id))
+        self.assertContains(response,'조회 값');self.assertNotContains(response,'비밀 값');self.assertNotContains(response,'숨김 그룹');self.assertNotContains(response,'data-process-input="title"')
+        task=run.tasks.get(status='OPEN');result=self.call(self.agent,'act',dict(expected_version=run.row_version,task_id=str(task.id),decision='COMPLETE',values={'title':'변조'},reason='위조 입력 검증'),run.id,True);self.assertEqual(result.status_code,422)
+        self.act(run,values={});run.refresh_from_db();self.assertEqual(run.data['title'],'조회 값');self.assertEqual(run.status,'COMPLETED')
+
+    def test_group_role_restriction_and_unknown_group_rejected(self):
+        from . import services as s
+        fs=[dict(key='title',label='제목',type='text',required=False)]
+        screen=self.publish(dict(fields=fs,read_only=[],columns=1,layout=dict(mode='sections',groups=[dict(key='basic',label='기본정보',fields=[dict(key='title',span=1,height=1)])])),'SCREEN')
+        graph=self.graph([self.task(screen_version_id=str(screen.id),field_roles={'title':{'read':['AGENT'],'write':['AGENT']}},group_roles={'basic':{'read':['SERVICE_MANAGER'],'write':['SERVICE_MANAGER']}})],fs)
+        run=self.start(self.publish(graph),{'title':'그룹 권한 비밀'});self.client.force_login(self.agent.user);response=self.client.get('/processes/'+str(run.id));self.assertNotContains(response,'그룹 권한 비밀');self.assertNotContains(response,'기본정보')
+        graph['nodes'][1]['group_modes']={'unknown':'HIDDEN'}
+        with self.assertRaises(s.BusinessError):engine.validate(self.admin,'WORKFLOW',graph)
+
+    def test_group_write_role_and_approval_expansion_preserve_group_limits(self):
+        fs=[dict(key='title',label='제목',type='text',required=False)]
+        screen=self.publish(dict(fields=fs,read_only=[],columns=1,layout=dict(mode='sections',groups=[dict(key='basic',label='기본정보',fields=[dict(key='title',span=1,height=1)])])),'SCREEN')
+        approval=self.publish(dict(stages=[dict(key='approve',label='결재',selector=self.selector([self.manager]),mode='ALL')]),'APPROVAL')
+        version=self.publish(self.graph([self.task(screen_version_id=str(screen.id),approval_version_id=str(approval.id),approval_timing='BEFORE',group_modes={'basic':'EDIT'},group_roles={'basic':{'read':['AGENT','SERVICE_MANAGER'],'write':['SERVICE_MANAGER']}})],fs))
+        run=self.start(version,{'title':'원본 값'});self.assertEqual(next(n for n in run.graph['nodes'] if n['type']=='APPROVAL')['group_roles']['basic']['write'],['SERVICE_MANAGER'])
+        self.act(run,actor=self.manager,decision='APPROVE');task=run.tasks.get(status='OPEN');self.client.force_login(self.agent.user);response=self.client.get('/processes/'+str(run.id));self.assertContains(response,'원본 값');self.assertNotContains(response,'data-process-input="title"')
+        result=self.call(self.agent,'act',dict(expected_version=run.row_version,task_id=str(task.id),decision='COMPLETE',values={'title':'변조'},reason='역할 제한 검증'),run.id,True);self.assertEqual(result.status_code,422)

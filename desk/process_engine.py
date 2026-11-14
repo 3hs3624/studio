@@ -120,10 +120,11 @@ def values_validate(fields,values,required=True,actor=None):
 def validate(actor,kind,raw):
     if not isinstance(raw,dict):s.fail('INVALID_GRAPH','설정 객체가 필요합니다.')
     if kind=='SCREEN':
-        s.check_fields(raw,['fields','read_only','columns'],['fields','read_only','columns'])
+        s.check_fields(raw,['fields','read_only','columns','layout'],['fields','read_only','columns'])
         fields=fields_validate(raw['fields'],actor);read_only=raw['read_only']
         if not isinstance(read_only,list) or any(not isinstance(k,str) for k in read_only) or not set(read_only)<={f['key'] for f in fields} or type(raw['columns']) is not int or raw['columns'] not in (1,2,3):s.fail('INVALID_SCREEN','읽기 전용 항목과 화면 열 수를 확인하십시오.')
-        return dict(fields=fields,read_only=read_only,columns=raw['columns'])
+        from .screen_layout import validate_layout
+        return dict(fields=fields,read_only=read_only,columns=raw['columns'],**({'layout':validate_layout(raw['layout'],fields,raw['columns'])} if 'layout' in raw else {}))
     if kind=='APPROVAL':
         s.check_fields(raw,['stages'],['stages'])
         stages=raw['stages']
@@ -146,7 +147,7 @@ def validate(actor,kind,raw):
     result={}
     for value in nodes:
         if not isinstance(value,dict):s.fail('INVALID_NODE','노드 설정을 확인하십시오.')
-        s.check_fields(value,['key','label','type','next','reject','true','false','branches','join','selector','mode','condition','wait_seconds','version_id','action','field','value','field_keys','approval_version_id','approval_timing','screen_version_id','screen','field_modes','field_roles','required_fields','count','count_field','input_mapping','output_mapping','api_version_id'],['key','label','type'])
+        s.check_fields(value,['key','label','type','next','reject','true','false','branches','join','selector','mode','condition','wait_seconds','version_id','action','field','value','field_keys','approval_version_id','approval_timing','screen_version_id','screen','field_modes','field_roles','group_modes','group_roles','required_fields','count','count_field','input_mapping','output_mapping','api_version_id'],['key','label','type'])
         key=s.text(value,'key',40);type_=value['type']
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,39}',key) or '__' in key or key in result or type_ not in KINDS:s.fail('INVALID_NODE','노드 식별자와 종류를 확인하십시오.')
         node=dict(key=key,label=s.text(value,'label',150),type=type_)
@@ -204,11 +205,22 @@ def validate(actor,kind,raw):
                 for selected in rule.values():
                     if not isinstance(selected,list) or len(selected)>50 or any(not isinstance(key,str) for key in selected):s.fail('INVALID_FIELD_ACCESS','역할 목록을 확인하십시오.')
                     for role_key in selected:role_object(actor,role_key)
+            groups={g['key']:g for g in (screen or {}).get('layout',{}).get('groups',[])}
+            group_modes=value.get('group_modes',{});group_roles=value.get('group_roles',{})
+            if not isinstance(group_modes,dict) or set(group_modes)-set(groups) or any(mode not in ('HIDDEN','READ','EDIT') for mode in group_modes.values()):s.fail('INVALID_GROUP_ACCESS','그룹 표시·입력 권한을 확인하십시오.')
+            if not isinstance(group_roles,dict) or set(group_roles)-set(groups):s.fail('INVALID_GROUP_ACCESS','그룹별 역할을 확인하십시오.')
+            for rule in group_roles.values():
+                if not isinstance(rule,dict) or set(rule)-{'read','write'}:s.fail('INVALID_GROUP_ACCESS','그룹 조회·입력 역할을 확인하십시오.')
+                for selected in rule.values():
+                    if not isinstance(selected,list) or len(selected)>50 or any(not isinstance(key,str) for key in selected):s.fail('INVALID_GROUP_ACCESS','그룹 역할 목록을 확인하십시오.')
+                    for role_key in selected:role_object(actor,role_key)
+            field_groups={item['key']:key for key,g in groups.items() for item in g['fields']}
+            node.update(group_modes=group_modes,group_roles=group_roles)
             required=value.get('required_fields',[])
             if not isinstance(required,list) or any(not isinstance(k,str) for k in required) or not set(required)<=available:s.fail('INVALID_FIELD_ACCESS','필수 항목을 확인하십시오.')
-            if any(modes.get(k)=='HIDDEN' for k in required):s.fail('INVALID_FIELD_ACCESS','숨김 항목은 이 태스크의 필수 입력으로 지정할 수 없습니다.')
+            if any(modes.get(k)=='HIDDEN' or group_modes.get(field_groups.get(k))=='HIDDEN' for k in required):s.fail('INVALID_FIELD_ACCESS','숨김 항목은 이 태스크의 필수 입력으로 지정할 수 없습니다.')
             node.update(field_modes=modes,field_roles=roles,required_fields=required)
-            if type_=='TASK' and screen:node['field_keys']=[k for k,mode in modes.items() if mode=='EDIT']
+            if type_=='TASK' and screen:node['field_keys']=[k for k,mode in modes.items() if mode=='EDIT' and group_modes.get(field_groups.get(k),'EDIT')=='EDIT']
         if type_ in ('APPROVAL','SUBPROCESS','TRANSFER'):
             ref=version(actor,value.get('version_id'),'APPROVAL' if type_=='APPROVAL' else 'WORKFLOW',True);node['version_id']=str(ref.id)
             if type_ in ('SUBPROCESS','TRANSFER'):
@@ -308,12 +320,12 @@ def compile_graph(actor,version_,depth=0):
             before=node['approval_timing']=='BEFORE'
             work['next']=node['next'] if before else prefix+stages[0]['key']
             output.extend([dict(key=node['key'],label=node['label'],type='ACTION',action='NOOP',next=prefix+stages[0]['key'] if before else work['key']),work])
-            for index,stage in enumerate(stages):output.append(dict(key=prefix+stage['key'],label=node['label']+' / '+stage['label'],type='APPROVAL',selector=stage['selector'],mode=stage['mode'],**{k:node[k] for k in ('screen','field_modes','field_roles','required_fields') if k in node},next=prefix+stages[index+1]['key'] if index+1<len(stages) else work['key'] if before else node['next'],**({'reject':node['reject']} if node.get('reject') else {})))
+            for index,stage in enumerate(stages):output.append(dict(key=prefix+stage['key'],label=node['label']+' / '+stage['label'],type='APPROVAL',selector=stage['selector'],mode=stage['mode'],**{k:node[k] for k in ('screen','field_modes','field_roles','group_modes','group_roles','required_fields') if k in node},next=prefix+stages[index+1]['key'] if index+1<len(stages) else work['key'] if before else node['next'],**({'reject':node['reject']} if node.get('reject') else {})))
         elif type_=='APPROVAL':
             ref=version(actor,node['version_id'],'APPROVAL',True);stages=ref.graph['stages'];prefix=node['key']+'__'
             output.append(dict(key=node['key'],label=node['label'],type='ACTION',action='NOOP',next=prefix+stages[0]['key']))
             for index,stage in enumerate(stages):
-                output.append(dict(key=prefix+stage['key'],label=node['label']+' / '+stage['label'],type='APPROVAL',selector=stage['selector'],mode=stage['mode'],**{k:node[k] for k in ('screen','field_modes','field_roles','required_fields') if k in node},next=prefix+stages[index+1]['key'] if index+1<len(stages) else node['next'],**({'reject':node['reject']} if node.get('reject') else {})))
+                output.append(dict(key=prefix+stage['key'],label=node['label']+' / '+stage['label'],type='APPROVAL',selector=stage['selector'],mode=stage['mode'],**{k:node[k] for k in ('screen','field_modes','field_roles','group_modes','group_roles','required_fields') if k in node},next=prefix+stages[index+1]['key'] if index+1<len(stages) else node['next'],**({'reject':node['reject']} if node.get('reject') else {})))
         else:
             if type_ in ('SUBPROCESS','TRANSFER'):
                 ref=version(actor,node['version_id'],'WORKFLOW',True);node['child_graph']=compile_graph(actor,ref,depth+1);total+=len(node['child_graph']['nodes'])
@@ -629,11 +641,14 @@ def task_fields(actor,run,node,task,editing=False):
     screen=node.get('screen') or run.graph.get('screen')
     fields=screen['fields'] if screen else [f for f in run.graph.get('fields',[]) if f['key'] in node.get('field_keys',[])]
     roles={r['key'] for r in role_rows(actor)};result=[]
+    field_groups={item['key']:g['key'] for g in (screen or {}).get('layout',{}).get('groups',[]) for item in g['fields']}
     for field in fields:
         key=field['key'];mode=node.get('field_modes',{}).get(key,'READ' if task.kind=='APPROVAL' else 'EDIT')
+        group_key=field_groups.get(key);group_mode=node.get('group_modes',{}).get(group_key,'EDIT');group_rules=node.get('group_roles',{}).get(group_key,{})
+        if group_mode=='HIDDEN' or group_rules.get('read') and not roles&set(group_rules['read']):continue
         rules=node.get('field_roles',{}).get(key,{})
         if mode=='HIDDEN' or (rules.get('read') and not roles&set(rules['read'])):continue
-        readonly=mode!='EDIT' or task.kind!='TASK' or not editing or key in (screen or {}).get('read_only',[]) or bool(rules.get('write') and not roles&set(rules['write']))
+        readonly=group_mode!='EDIT' or bool(group_rules.get('write') and not roles&set(group_rules['write'])) or mode!='EDIT' or task.kind!='TASK' or not editing or key in (screen or {}).get('read_only',[]) or bool(rules.get('write') and not roles&set(rules['write']))
         item={**field,'read_only':readonly,'required':key in node.get('required_fields',[]) or field['required'],'value':run.data.get(key,'')}
         if field['type']=='person':
             people=Person.objects.filter(organization=actor.organization,active=True,user__is_active=True).select_related('profile')
