@@ -19,7 +19,7 @@ def navigation(path, c):
         links=[{'label':label,'url':url,'active':path==url or (url not in ['/systems/service','/systems/asset','/systems/resource'] and path.startswith(url+'/'))} for label,url,visible in rows if visible]
         if links: groups.append({'title':title,'links':links})
     if key=='service':
-        group('서비스 이용', [('서비스 현황','/systems/service',True),('서비스 카탈로그','/catalog',True),('내 서비스 요청','/portal/requests',True),('내 장애 요청','/portal/incidents',True),('서비스 승인함','/approvals',True),('워크플로우 업무·결재','/processes',True)])
+        group('서비스 이용', [('서비스 현황','/systems/service',True),('서비스 카탈로그','/catalog',True),('전체 서비스 요청' if c.get('is_admin') else '내 서비스 요청','/portal/requests',True),('내 장애 요청','/portal/incidents',True),('서비스 승인함','/approvals',True),('워크플로우 업무·결재','/processes',True)])
         group('서비스 운영',[('장애 처리','/work/incidents',c['can_work']),('서비스 요청 처리','/work/requests',c['can_work'])])
         group('구성 관리',[('구성항목 대장','/cis',True)])
     elif key=='asset':
@@ -29,7 +29,7 @@ def navigation(path, c):
     elif key=='resource':
         group('소스 · 배포 관리',[('자원 현황','/systems/resource',True),('소스 변경 목록','/resources/changes',c.get('delivery_can_read',False)),('배포 목록','/resources/deployments',c.get('delivery_can_read',False))])
     else:
-        group('나의 업무',[('내 서비스 요청','/portal/requests',True),('서비스 승인함','/approvals',True),('워크플로우 업무·결재','/processes',True),('내 지급 자산','/my-assets',True)])
+        group('나의 업무',[('전체 서비스 요청' if c.get('is_admin') else '내 서비스 요청','/portal/requests',True),('서비스 승인함','/approvals',True),('워크플로우 업무·결재','/processes',True),('내 지급 자산','/my-assets',True)])
     all_links=[link for section in groups for link in section['links']]
     active=[link for link in all_links if link['active']]
     if active:
