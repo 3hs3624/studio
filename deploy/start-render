@@ -13,4 +13,7 @@ python manage.py bootstrap_local_access --password-prefix STUDIO_LOCAL_
 if [ "${VERIFY_HOSTED_ACCESS:-0}" = '1' ]; then
     python manage.py check_hosted_access
 fi
+if [ -n "${STUDIO_SR_PROVISION_ORGANIZATION_ID:-}" ]; then
+    python manage.py setup_service_request --organization-id "$STUDIO_SR_PROVISION_ORGANIZATION_ID"
+fi
 exec python deploy/run_services.py

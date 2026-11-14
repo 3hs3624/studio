@@ -41,7 +41,7 @@ def context(request):
             'can_purchase_request':bool(s.roles(p)&{'PROCUREMENT_MANAGER','SERVICE_MANAGER'}),
             'can_stock_read':bool(s.roles(p)&{'PROCUREMENT_MANAGER','STOCK_MANAGER'}),
             'can_contract_read':bool(s.roles(p)&{'PROCUREMENT_MANAGER','ASSET_MANAGER'}),
-            'pending_approvals':RequestApproval.objects.filter(organization=p.organization,approver=p,status='PENDING',ticket__status='PENDING_APPROVAL').count(),
+            'pending_approvals':__import__('desk.catalog',fromlist=['pending_approval_requests']).pending_approval_requests(p).count(),
             'unread_notifications':visible_notifications(p).filter(read_at__isnull=True).count()}
     from .navigation import navigation, console_navigation, LEGACY_CONSOLE_PATHS
     from django.conf import settings
@@ -250,7 +250,7 @@ def request_listing(request,work=False,approvals=False):
             s.fail('FORBIDDEN','처리 권한이 없습니다.',403)
         qs=catalog.request_query(c['actor'],'queue' if work else 'mine')
         if approvals:
-            qs=catalog.request_query(c['actor']).filter(request_approval__approver=c['actor'],request_approval__status='PENDING',status='PENDING_APPROVAL')
+            qs=catalog.pending_approval_requests(c['actor'])
         state=request.GET.get('status','')
         if state:
             if state not in REQUEST_STATUSES:

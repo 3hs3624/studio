@@ -10,16 +10,16 @@ const label=(name,item)=>{const box=el('label',name);box.append(item);return box
 const checkbox=checked=>{const item=input('','checkbox');item.checked=!!checked;return item;};
 const setData=(node,name,value)=>{node.dataset[name]=value;return node;};
 const fieldBody=form.querySelector('[data-process-fields]'),nodeBody=form.querySelector('[data-process-nodes]');
-function fields(){return fieldBody?Array.from(fieldBody.children).map(row=>({key:row.querySelector('[data-p=key]').value,label:row.querySelector('[data-p=label]').value,type:row.querySelector('[data-p=type]').value,required:row.querySelector('[data-p=required]').checked})):[];}
+function fields(){return fieldBody?Array.from(fieldBody.children).map(row=>({key:row.querySelector('[data-p=key]').value,label:row.querySelector('[data-p=label]').value,type:row.querySelector('[data-p=type]').value,required:row.querySelector('[data-p=required]').checked,...(row.querySelector('[data-p=group_id]').value?{group_id:row.querySelector('[data-p=group_id]').value}:{})})):[];}
 function addField(field={key:'field_'+(++sequence),label:'새 항목',type:'text',required:false}){
- const row=el('tr');for(const [key,node] of [['key',input(field.key)],['label',input(field.label)],['type',select([{id:'text',name:'문자'},{id:'number',name:'숫자'},{id:'boolean',name:'예·아니오'}],field.type)],['required',checkbox(field.required)]]){const cell=el('td');cell.append(setData(node,'p',key));row.append(cell);}
+ const row=el('tr');for(const [key,node] of [['key',input(field.key)],['label',input(field.label)],['type',select([{id:'text',name:'문자'},{id:'number',name:'숫자'},{id:'boolean',name:'예·아니오'},{id:'person',name:'담당자'}],field.type)],['required',checkbox(field.required)],['group_id',select([{id:'',name:'전체 조직'},...(targets.GROUP||[])],field.group_id||'')]]){const cell=el('td');cell.append(setData(node,'p',key));row.append(cell);}
  if(kind==='SCREEN'){const cell=el('td');cell.append(setData(checkbox((draft.read_only||[]).includes(field.key)),'p','readonly'));row.append(cell);}
  const cell=el('td'),remove=el('button','제거');remove.type='button';remove.className='secondary';remove.addEventListener('click',()=>row.remove());cell.append(remove);row.append(cell);fieldBody.append(row);
 }
 function selectorControls(parent,spec={kind:'USER',ids:[]}){
  spec=spec&&typeof spec==='object'?spec:{kind:'USER',ids:[]};
- const type=select(['USER','ROLE','GROUP','DEPARTMENT'].map((id,index)=>({id,name:['사용자','역할','그룹','부서'][index]})),spec.kind),items=select(targets[spec.kind]||[],spec.ids,true),sub=checkbox(spec.include_children);
- type.dataset.p='selectorKind';items.dataset.p='selectorIds';sub.dataset.p='selectorChildren';type.addEventListener('change',()=>{const replacement=select(targets[type.value]||[],[],true);replacement.dataset.p='selectorIds';items.replaceChildren(...replacement.children);});
+ const type=select(['USER','ROLE','GROUP','DEPARTMENT','STARTER','FIELD_USER'].map((id,index)=>({id,name:['사용자','역할','그룹','부서','신청자 자동','선택 담당자 필드'][index]})),spec.kind),items=select(spec.kind==='FIELD_USER'?fields().filter(f=>f.type==='person').map(f=>({id:f.key,name:f.label})):targets[spec.kind]||[],spec.ids,true),sub=checkbox(spec.include_children);
+ type.dataset.p='selectorKind';items.dataset.p='selectorIds';sub.dataset.p='selectorChildren';type.addEventListener('change',()=>{const replacement=select(type.value==='FIELD_USER'?fields().filter(f=>f.type==='person').map(f=>({id:f.key,name:f.label})):targets[type.value]||[],[],true);replacement.dataset.p='selectorIds';items.replaceChildren(...replacement.children);});
  parent.append(label('할당 유형',type),label('할당 대상 · 복수 선택',items),label('하위 부서 포함',sub));
 }
 function control(parent,key,text,node){node.dataset.p=key;parent.append(label(text,node));return node;}
@@ -71,7 +71,7 @@ function serializeNode(row){const value=key=>row.querySelector('[data-p='+key+']
 window.buildProcessGraph=()=>{
  if(kind==='SCREEN')return {fields:fields(),read_only:Array.from(fieldBody.children).filter(row=>row.querySelector('[data-p=readonly]').checked).map(row=>row.querySelector('[data-p=key]').value),columns:Number(form.elements.screen_columns.value)};
  const nodes=Array.from(nodeBody.children).map(serializeNode);if(kind==='APPROVAL')return {stages:nodes};
- const graph={start:form.elements.start_node.value,fields:fields(),nodes,positions:Object.fromEntries(Object.entries(positions).filter(([key])=>nodes.some(n=>n.key===key)))};if(form.elements.common_screen.value)graph.screen_version_id=form.elements.common_screen.value;return graph;
+ const graph={catalog_only:form.elements.catalog_only.checked,close_on_complete:form.elements.close_on_complete.checked,ticket_assignee_field:form.elements.ticket_assignee_field.value,start:form.elements.start_node.value,fields:fields(),nodes,positions:Object.fromEntries(Object.entries(positions).filter(([key])=>nodes.some(n=>n.key===key)))};if(form.elements.common_screen.value)graph.screen_version_id=form.elements.common_screen.value;return graph;
 };
 function draw(){try{
  const graph=window.buildProcessGraph(),svg=form.querySelector('[data-process-canvas]');svg.replaceChildren();const ns='http://www.w3.org/2000/svg',make=name=>document.createElementNS(ns,name);const computed=new Map(graph.nodes.map((node,index)=>[node.key,positions[node.key]||{x:40+(index%3)*330,y:40+Math.floor(index/3)*160}]));let height=300,width=1100;

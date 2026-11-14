@@ -40,12 +40,12 @@ def manage(request,kind='WORKFLOW',id=None):
 def inbox(request,id=None):
     try:
         c=context(request);actor=c['actor'];require(actor,'workflow.use')
-        c['available_processes']=ProcessDefinition.objects.filter(organization=actor.organization,kind='WORKFLOW',active=True,published__isnull=False,published__processretirement__isnull=True).select_related('published')
+        c['available_processes']=[d for d in ProcessDefinition.objects.filter(organization=actor.organization,kind='WORKFLOW',active=True,published__isnull=False,published__processretirement__isnull=True).select_related('published') if not d.published.graph.get('catalog_only')]
         if id:
             run=engine.run_for(actor,id)
             tasks=list(run.tasks.order_by('created_at','id'))
             for task in tasks:
-                task.can_act=task.status=='OPEN' and task.kind in ('TASK','APPROVAL') and str(actor.id) in task.person_ids and actor.id in engine.recipients(actor,task.selector) and not (task.kind=='APPROVAL' and run.started_by_id==actor.id) and not ProcessVote.objects.filter(task=task,actor=actor).exists()
+                task.can_act=task.status=='OPEN' and task.kind in ('TASK','APPROVAL') and str(actor.id) in task.person_ids and actor.id in engine.recipients(actor,task.selector,run) and not (task.kind=='APPROVAL' and run.started_by_id==actor.id) and not ProcessVote.objects.filter(task=task,actor=actor).exists()
                 task.participants=Person.objects.filter(organization=actor.organization,id__in=task.person_ids).select_related('profile')
                 task.children=ProcessRun.objects.filter(organization=actor.organization,id__in=task.child_ids).select_related('version__definition')
                 node=next(n for n in run.graph['nodes'] if n['key']==task.node_key)

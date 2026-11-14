@@ -41,6 +41,12 @@ def selector(actor,value):
     if not isinstance(value,dict):s.fail('INVALID_SELECTOR','할당 대상을 선택하십시오.')
     s.check_fields(value,['kind','ids','include_children'],['kind','ids'])
     kind=value['kind'];ids=value['ids']
+    if kind=='STARTER':
+        if not isinstance(ids,list) or ids:s.fail('INVALID_SELECTOR','신청자 자동 할당은 고정 대상을 지정하지 않습니다.')
+        return dict(kind=kind,ids=[])
+    if kind=='FIELD_USER':
+        if not isinstance(ids,list) or len(ids)!=1 or not isinstance(ids[0],str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,39}',ids[0]):s.fail('INVALID_SELECTOR','담당자 필드 하나를 선택하십시오.')
+        return dict(kind=kind,ids=ids)
     if kind not in ('USER','ROLE','GROUP','DEPARTMENT') or not isinstance(ids,list) or not 1<=len(ids)<=200 or any(not isinstance(v,str) for v in ids) or len(set(ids))!=len(ids):s.fail('INVALID_SELECTOR','할당 유형과 대상 목록을 확인하십시오.')
     if type(value.get('include_children',False)) is not bool:s.fail('INVALID_SELECTOR','하위 부서 포함 여부를 확인하십시오.')
     if kind=='ROLE':
@@ -52,9 +58,17 @@ def selector(actor,value):
     return dict(kind=kind,ids=ids,include_children=value.get('include_children',False))
 
 
-def recipients(actor,spec):
+def recipients(actor,spec,run=None):
     people=Person.objects.filter(organization=actor.organization,active=True,user__is_active=True)
     values=set(spec['ids']);kind=spec['kind']
+    if kind=='STARTER':return list(people.filter(id=run.started_by_id).values_list('id',flat=True)) if run else []
+    if kind=='FIELD_USER':
+        if not run:return []
+        key=spec['ids'][0];value=run.data.get(key);field=next((f for f in run.graph.get('fields',[]) if f['key']==key and f['type']=='person'),None)
+        if not value or not field:return []
+        try:person=people.filter(id=uuid.UUID(value)).first()
+        except (ValueError,TypeError,AttributeError):return []
+        return [person.id] if person and (not field.get('group_id') or field['group_id'] in effective_groups(person)) else []
     if kind=='USER':return list(people.filter(id__in=values).values_list('id',flat=True))
     result=[]
     for person in people:
@@ -67,19 +81,23 @@ def recipients(actor,spec):
     return result
 
 
-def fields_validate(fields):
+def fields_validate(fields,actor=None):
     if not isinstance(fields,list) or len(fields)>30:s.fail('INVALID_FIELDS','입력 항목은 최대 30개입니다.')
     result=[];keys=set()
     for field in fields:
         if not isinstance(field,dict):s.fail('INVALID_FIELDS','입력 항목을 확인하십시오.')
-        s.check_fields(field,['key','label','type','required'],['key','label','type','required'])
+        s.check_fields(field,['key','label','type','required','group_id'],['key','label','type','required'])
         key=s.text(field,'key',40)
-        if not re.fullmatch(r'[a-z][a-z0-9_]{0,39}',key) or key in keys or field['type'] not in ('text','number','boolean') or type(field['required']) is not bool:s.fail('INVALID_FIELDS','항목 식별자·종류·필수 여부를 확인하십시오.')
-        keys.add(key);result.append(dict(key=key,label=s.text(field,'label',100),type=field['type'],required=field['required']))
+        if not re.fullmatch(r'[a-z][a-z0-9_]{0,39}',key) or key in keys or field['type'] not in ('text','number','boolean','person') or type(field['required']) is not bool:s.fail('INVALID_FIELDS','항목 식별자·종류·필수 여부를 확인하십시오.')
+        item=dict(key=key,label=s.text(field,'label',100),type=field['type'],required=field['required'])
+        if field.get('group_id'):
+            if field['type']!='person' or not actor or not Group.objects.filter(organization=actor.organization,id=s.identifier(field['group_id']),active=True).exists():s.fail('INVALID_PERSON_GROUP','담당자 선택 범위는 현재 조직의 활성 그룹이어야 합니다.')
+            item['group_id']=str(field['group_id'])
+        keys.add(key);result.append(item)
     return result
 
 
-def values_validate(fields,values,required=True):
+def values_validate(fields,values,required=True,actor=None):
     if not isinstance(values,dict) or set(values)-{f['key'] for f in fields}:s.fail('INVALID_VALUES','허용된 입력 항목만 전달하십시오.')
     result={}
     for field in fields:
@@ -87,7 +105,13 @@ def values_validate(fields,values,required=True):
         if key not in values:
             if required and field['required']:s.fail('REQUIRED_FIELD',field['label']+' 항목을 입력하십시오.')
             continue
-        value=values[key];valid=(isinstance(value,str) and len(value)<=2000) if field['type']=='text' else (type(value) in (int,float) and abs(value)<=10**15) if field['type']=='number' else type(value) is bool
+        value=values[key]
+        if field['type']=='person':
+            try:person=Person.objects.filter(organization=actor.organization,id=uuid.UUID(value),active=True,user__is_active=True).first() if actor else None
+            except (ValueError,TypeError,AttributeError):person=None
+            if not person or field.get('group_id') and field['group_id'] not in effective_groups(person):s.fail('INVALID_ASSIGNEE','선택 범위의 활성 담당자를 지정하십시오.')
+            result[key]=str(person.id);continue
+        valid=(isinstance(value,str) and len(value)<=2000) if field['type']=='text' else (type(value) in (int,float) and abs(value)<=10**15) if field['type']=='number' else type(value) is bool
         if not valid or (required and field['required'] and isinstance(value,str) and not value.strip()):s.fail('INVALID_VALUES',field['label']+' 값을 확인하십시오.')
         result[key]=value
     return result
@@ -97,7 +121,7 @@ def validate(actor,kind,raw):
     if not isinstance(raw,dict):s.fail('INVALID_GRAPH','설정 객체가 필요합니다.')
     if kind=='SCREEN':
         s.check_fields(raw,['fields','read_only','columns'],['fields','read_only','columns'])
-        fields=fields_validate(raw['fields']);read_only=raw['read_only']
+        fields=fields_validate(raw['fields'],actor);read_only=raw['read_only']
         if not isinstance(read_only,list) or any(not isinstance(k,str) for k in read_only) or not set(read_only)<={f['key'] for f in fields} or type(raw['columns']) is not int or raw['columns'] not in (1,2,3):s.fail('INVALID_SCREEN','읽기 전용 항목과 화면 열 수를 확인하십시오.')
         return dict(fields=fields,read_only=read_only,columns=raw['columns'])
     if kind=='APPROVAL':
@@ -112,9 +136,9 @@ def validate(actor,kind,raw):
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,39}',key) or key in {x['key'] for x in result} or stage['mode'] not in ('ALL','ANY'):s.fail('INVALID_GRAPH','결재 단계 식별자와 합의 방식을 확인하십시오.')
             result.append(dict(key=key,label=s.text(stage,'label',150),selector=selector(actor,stage['selector']),mode=stage['mode']))
         return {'stages':result}
-    s.check_fields(raw,['nodes','start','fields','positions','screen_version_id','screen'],['nodes','start'])
+    s.check_fields(raw,['nodes','start','fields','positions','screen_version_id','screen','close_on_complete','ticket_assignee_field','catalog_only'],['nodes','start'])
     common_screen=version(actor,raw['screen_version_id'],'SCREEN',True) if raw.get('screen_version_id') else None
-    fields=fields_validate(raw.get('fields',common_screen.graph['fields'] if common_screen else []));nodes=raw['nodes'];start=raw['start']
+    fields=fields_validate(raw.get('fields',common_screen.graph['fields'] if common_screen else []),actor);nodes=raw['nodes'];start=raw['start']
     if common_screen:
         for field in common_screen.graph['fields']:
             if not any(f['key']==field['key'] and f['type']==field['type'] for f in fields):s.fail('SCREEN_FIELD_MISMATCH','공통 화면의 항목을 프로세스 데이터에 선언하십시오.')
@@ -147,7 +171,9 @@ def validate(actor,kind,raw):
                 if mapping_key=='output_mapping' and (set(mapping)-declared or set(mapping.values())-set(api.settings['response_mapping'])):s.fail('INVALID_MAPPING','API 결과 항목과 프로세스 항목을 확인하십시오.')
                 node[mapping_key]=mapping
         if type_=='TASK':
-            node['selector']=selector(actor,value.get('selector'));node['mode']=value.get('mode','ANY')
+            node['selector']=selector(actor,value.get('selector'))
+            if node['selector']['kind']=='FIELD_USER' and not any(f['key']==node['selector']['ids'][0] and f['type']=='person' for f in fields):s.fail('INVALID_SELECTOR','선언된 담당자 유형 필드를 연결하십시오.')
+            node['mode']=value.get('mode','ANY')
             if node['mode'] not in ('ALL','ANY'):s.fail('INVALID_NODE','처리 방식을 확인하십시오.')
             keys=value.get('field_keys',[])
             if not isinstance(keys,list) or any(not isinstance(k,str) for k in keys) or not set(keys)<={f['key'] for f in fields}:s.fail('INVALID_FIELDS','선언된 입력 항목만 업무에 연결하십시오.')
@@ -210,14 +236,14 @@ def validate(actor,kind,raw):
                 if condition['op']=='in':
                     values=condition.get('value')
                     if not isinstance(values,list) or len(values)>100:s.fail('INVALID_CONDITION','목록 조건을 확인하십시오.')
-                    for candidate in values:values_validate([f for f in fields if f['key']==condition['field']],{condition['field']:candidate})
-                else:values_validate([f for f in fields if f['key']==condition['field']],{condition['field']:condition.get('value')})
+                    for candidate in values:values_validate([f for f in fields if f['key']==condition['field']],{condition['field']:candidate},actor=actor)
+                else:values_validate([f for f in fields if f['key']==condition['field']],{condition['field']:condition.get('value')},actor=actor)
             node['condition']=condition
         if type_=='ACTION':
             if value.get('action') not in ('NOOP','SET_FIELD'):s.fail('INVALID_ACTION','등록된 안전한 동작만 선택하십시오.')
             node['action']=value['action']
             if value['action']=='SET_FIELD':
-                field=value.get('field');values_validate(fields,{field:value.get('value')},False);node.update(field=field,value=value.get('value'))
+                field=value.get('field');values_validate(fields,{field:value.get('value')},False,actor=actor);node.update(field=field,value=value.get('value'))
         result[key]=node
     if start not in result or result[start]['type']!='START' or sum(n['type']=='START' for n in result.values())!=1 or not any(n['type'] in ('END','TRANSFER') for n in result.values()):s.fail('INVALID_GRAPH','시작 노드 하나와 종료 노드가 필요합니다.')
     def edges(node):return [node[e] for e in ('next','true','false','reject') if e in node]+node.get('branches',[])
@@ -267,7 +293,9 @@ def validate(actor,kind,raw):
     if not isinstance(positions,dict) or set(positions)-set(result):s.fail('INVALID_POSITION','캔버스 위치를 확인하십시오.')
     for point in positions.values():
         if not isinstance(point,dict) or set(point)!= {'x','y'} or any(type(v) is not int or not 0<=v<=4000 for v in point.values()):s.fail('INVALID_POSITION','캔버스 좌표를 확인하십시오.')
-    return dict(start=start,nodes=list(result.values()),fields=fields,positions=positions,**({'screen_version_id':str(common_screen.id),'screen':common_screen.graph} if common_screen else {}))
+    close=raw.get('close_on_complete',False);assignment=raw.get('ticket_assignee_field','');catalog_only=raw.get('catalog_only',False)
+    if type(catalog_only) is not bool or type(close) is not bool or assignment and not any(f['key']==assignment and f['type']=='person' for f in fields):s.fail('INVALID_TICKET_BINDING','종료 정책과 담당자 필드를 확인하십시오.')
+    return dict(start=start,nodes=list(result.values()),fields=fields,positions=positions,catalog_only=catalog_only,close_on_complete=close,ticket_assignee_field=assignment,**({'screen_version_id':str(common_screen.id),'screen':common_screen.graph} if common_screen else {}))
 
 
 def compile_graph(actor,version_,depth=0):
@@ -292,7 +320,7 @@ def compile_graph(actor,version_,depth=0):
             output.append(node)
     if len({n['key'] for n in output})!=len(output):s.fail('DUPLICATE_COMPILED_NODE','확장된 노드 식별자가 중복되었습니다.')
     if len(output)+total>300:s.fail('EXPANSION_LIMIT','확장된 프로세스 크기가 제한을 초과합니다.')
-    return dict(start=graph['start'],nodes=output,fields=graph.get('fields',[]),**({'screen':graph['screen'],'screen_version_id':graph['screen_version_id']} if graph.get('screen') else {}))
+    return dict(start=graph['start'],nodes=output,fields=graph.get('fields',[]),catalog_only=graph.get('catalog_only',False),close_on_complete=graph.get('close_on_complete',False),ticket_assignee_field=graph.get('ticket_assignee_field',''),**({'screen':graph['screen'],'screen_version_id':graph['screen_version_id']} if graph.get('screen') else {}))
 
 
 def event(actor,run,action,key='',details=None):ProcessEvent.objects.create(organization=actor.organization,run=run,actor=actor,action=action,node_key=key,details=details or {})
@@ -330,7 +358,7 @@ def advance(actor,run,tokens,notify=True):
                 return
             if children_complete(actor,run,task,node):tokens.append((node['next'],frames))
         elif kind in ('TASK','APPROVAL','WAIT'):
-            people=[] if kind=='WAIT' else [str(id) for id in recipients(actor,node['selector']) if kind!='APPROVAL' or id!=run.started_by_id]
+            people=[] if kind=='WAIT' else [str(id) for id in recipients(actor,node['selector'],run) if kind!='APPROVAL' or id!=run.started_by_id]
             created=ProcessTask.objects.create(organization=actor.organization,run=run,node_key=key,kind=kind,label=node['label'],selector=node.get('selector',{}),person_ids=people,frames=frames,mode=node.get('mode','ALL'),due_at=timezone.now()+timedelta(seconds=node['wait_seconds']) if kind=='WAIT' else None)
             for person_id in people:ProcessAssignment.objects.create(organization=actor.organization,task=created,person_id=person_id)
         elif kind=='END':
@@ -438,7 +466,7 @@ def mutate(actor,operation,data,request_id,target):
         node=next(n for n in run.graph['nodes'] if n['key']==task.node_key)
         if not task.child_ids or any(effective_child(c).status!='COMPLETED' for c in ProcessRun.objects.filter(id__in=task.child_ids)):s.fail('CHILDREN_PENDING','모든 하위 작업이 완료되어야 결과를 확정할 수 있습니다.',409)
         if not isinstance(data['values'],dict) or set(data['values'])!=set(node.get('output_mapping',{})):s.fail('INVALID_VALUES','정의된 결과 매핑 항목을 모두 확정하십시오.')
-        updates=values_validate(run.graph.get('fields',[]),data['values'],False);run.data.update(updates);run.block_reason='';task.status='COMPLETED';task.save(update_fields=['status']);run.row_version+=1;event(actor,run,'OUTPUTS_RECONCILED',task.node_key,{'fields':list(updates),'digest':digest(updates),'reason':s.text(data,'reason',2000)});advance(actor,run,[(node['next'],task.frames)]);return {'id':str(run.id),'version':run.row_version},200
+        updates=values_validate(run.graph.get('fields',[]),data['values'],False,actor=actor);run.data.update(updates);run.block_reason='';task.status='COMPLETED';task.save(update_fields=['status']);run.row_version+=1;event(actor,run,'OUTPUTS_RECONCILED',task.node_key,{'fields':list(updates),'digest':digest(updates),'reason':s.text(data,'reason',2000)});advance(actor,run,[(node['next'],task.frames)]);return {'id':str(run.id),'version':run.row_version},200
     if operation=='flow_retry_children':
         s.check_fields(data,['expected_version','reason','task_id'],['expected_version','reason','task_id'])
         task=run.tasks.filter(id=s.identifier(data['task_id']),kind='SUBPROCESS',status='OPEN').first()
@@ -470,7 +498,7 @@ def mutate(actor,operation,data,request_id,target):
         for person_id in ids:ProcessAssignment.objects.get_or_create(organization=actor.organization,task=task,person_id=person_id)
         run.row_version+=1;run.status='ACTIVE' if not any(t.kind in ('TASK','APPROVAL') and not t.person_ids for t in run.tasks.filter(status='OPEN')) else 'BLOCKED';run.save();event(actor,run,'REASSIGNED',task.node_key,{'before':previous,'after':ids,'reason':s.text(data,'reason',2000)});settle_parent(actor,run)
     else:
-        if task.kind not in ('TASK','APPROVAL') or str(actor.id) not in task.person_ids or actor.id not in recipients(actor,task.selector):s.fail('NOT_ASSIGNED','현재 유효한 담당자만 처리할 수 있습니다.',403)
+        if task.kind not in ('TASK','APPROVAL') or str(actor.id) not in task.person_ids or actor.id not in recipients(actor,task.selector,run):s.fail('NOT_ASSIGNED','현재 유효한 담당자만 처리할 수 있습니다.',403)
         if task.kind=='APPROVAL' and actor.id==run.started_by_id:s.fail('SELF_APPROVAL','본인 결재는 허용되지 않습니다.',403)
         decision=data.get('decision')
         if decision not in (('APPROVE','REJECT') if task.kind=='APPROVAL' else ('COMPLETE',)):s.fail('INVALID_DECISION','허용된 처리 동작을 선택하십시오.')
@@ -479,7 +507,7 @@ def mutate(actor,operation,data,request_id,target):
         ProcessVote.objects.create(organization=actor.organization,task=task,actor=actor,decision=decision,reason=reason)
         node=next(n for n in run.graph['nodes'] if n['key']==task.node_key)
         if task.kind=='TASK':
-            fields=[{**field,'required':False} for field in task_fields(actor,run,node,task,True) if not field['read_only']];updates=values_validate(fields,data.get('values',{}),False);run.data.update(updates)
+            fields=[{**field,'required':False} for field in task_fields(actor,run,node,task,True) if not field['read_only']];updates=values_validate(fields,data.get('values',{}),False,actor=actor);run.data.update(updates)
         elif data.get('values'):s.fail('READ_ONLY_TASK','결재 단계에서는 업무 데이터를 수정할 수 없습니다.')
         event(actor,run,decision,task.node_key,{'reason':reason,'task_id':str(task.id)})
         run.row_version+=1
@@ -492,7 +520,7 @@ def mutate(actor,operation,data,request_id,target):
                 all_fields=node.get('screen',run.graph.get('screen',{})).get('fields',run.graph.get('fields',[]))
                 required=set(node.get('required_fields',[]))|{f['key'] for f in all_fields if f['required'] and f['key'] in node.get('field_keys',[])}
                 for field in all_fields:
-                    if field['key'] in required:values_validate([{**field,'required':True}],{field['key']:run.data[field['key']]} if field['key'] in run.data else {})
+                    if field['key'] in required:values_validate([{**field,'required':True}],{field['key']:run.data[field['key']]} if field['key'] in run.data else {},actor=actor)
             task.status='COMPLETED';task.save(update_fields=['status']);advance(actor,run,[(node['next'],task.frames)])
         else:run.save(update_fields=['data','row_version'])
     return {'id':str(run.id),'version':run.row_version},200
@@ -500,11 +528,15 @@ def mutate(actor,operation,data,request_id,target):
 
 def sync_ticket(actor,run):
     if not run.ticket_id:return
-    ticket=run.ticket;old=ticket.status
-    mapping={'COMPLETED':'FULFILLED','REJECTED':'REJECTED','CANCELLED':'CANCELLED','TRANSFERRED':'TRANSFERRED'}
+    ticket=run.ticket;old=ticket.status;old_assignee=ticket.assignee_id
+    mapping={'COMPLETED':'CLOSED' if run.graph.get('close_on_complete') else 'FULFILLED','REJECTED':'REJECTED','CANCELLED':'CANCELLED','TRANSFERRED':'TRANSFERRED'}
     ticket.status=mapping.get(run.status,'PENDING_APPROVAL' if run.tasks.filter(status='OPEN',kind='APPROVAL').exists() else 'IN_PROGRESS')
-    if ticket.status!=old:
-        ticket.row_version+=1;ticket.save(update_fields=['status','row_version']);s.history(actor,ticket,old,'워크플로우 상태 반영');s.record(actor,ticket,'WORKFLOW_STATE_CHANGED',uuid.uuid4(),before={'status':old},after={'status':ticket.status,'run_id':str(run.id)})
+    field=run.graph.get('ticket_assignee_field')
+    if field and run.data.get(field):ticket.assignee_id=uuid.UUID(run.data[field])
+    if ticket.status!=old or ticket.assignee_id!=old_assignee:
+        ticket.row_version+=1;ticket.save(update_fields=['status','assignee','row_version'])
+        if ticket.status!=old:s.history(actor,ticket,old,'워크플로우 상태 반영')
+        s.record(actor,ticket,'WORKFLOW_STATE_CHANGED',uuid.uuid4(),before={'status':old,'assignee_id':str(old_assignee) if old_assignee else None},after={'status':ticket.status,'assignee_id':str(ticket.assignee_id) if ticket.assignee_id else None,'run_id':str(run.id)})
 
 
 def spawn_children(actor,run,task,node,count=None):
@@ -514,7 +546,7 @@ def spawn_children(actor,run,task,node,count=None):
     if ProcessRun.objects.filter(root_run=root).count()+count>200:s.fail('CHILD_RUN_LIMIT','한 실행의 하위 실행은 최대 200건입니다.')
     ref=version(actor,node['version_id'],'WORKFLOW')
     mapping=node.get('input_mapping',{});child_values={field['key']:run.data[mapping.get(field['key'],field['key'])] for field in node['child_graph'].get('fields',[]) if mapping.get(field['key'],field['key']) in run.data}
-    values=values_validate(node['child_graph'].get('fields',[]),child_values)
+    values=values_validate(node['child_graph'].get('fields',[]),child_values,actor=actor)
     children=[ProcessRun.objects.create(organization=actor.organization,version=ref,started_by=run.started_by,title=(run.title+' / '+node['label']+' '+str(index+1))[:300],data=dict(values),graph=node['child_graph'],parent_task=task,root_run=root) for index in range(count)]
     task.child_ids=[str(child.id) for child in children];task.save(update_fields=['child_ids'])
     event(actor,run,'CHILDREN_STARTED',task.node_key,{'child_run_ids':task.child_ids,'version':str(ref.id)})
@@ -532,7 +564,7 @@ def children_complete(actor,run,task,node):
         if any(value!=values[0] for value in values):
             run.block_reason='CHILD_OUTPUT_CONFLICT';run.status='BLOCKED';run.save(update_fields=['block_reason','status']);event(actor,run,'CHILD_OUTPUT_CONFLICT',task.node_key,{'field':key});return False
         updates[key]=values[0]
-    run.data.update(values_validate(run.graph.get('fields',[]),updates,False));task.status='COMPLETED';task.save(update_fields=['status']);event(actor,run,'CHILDREN_COMPLETED',task.node_key,{'child_run_ids':task.child_ids});return True
+    run.data.update(values_validate(run.graph.get('fields',[]),updates,False,actor=actor));task.status='COMPLETED';task.save(update_fields=['status']);event(actor,run,'CHILDREN_COMPLETED',task.node_key,{'child_run_ids':task.child_ids});return True
 
 
 def settle_parent(actor,child):
@@ -586,8 +618,9 @@ def effective_child(run,seen=None):
 
 
 def start_run(actor,value,title,values,ticket=None):
+    if value.graph.get('catalog_only') and not ticket:s.fail('CATALOG_REQUIRED','이 프로세스는 서비스 카탈로그에서 신청하십시오.')
     graph=compile_graph(actor,value)
-    run=ProcessRun.objects.create(organization=actor.organization,version=value,started_by=actor,title=title,data=values_validate(graph.get('fields',[]),values),graph=graph,ticket=ticket)
+    run=ProcessRun.objects.create(organization=actor.organization,version=value,started_by=actor,title=title,data=values_validate(graph.get('fields',[]),values,actor=actor),graph=graph,ticket=ticket)
     event(actor,run,'STARTED',details={'version':str(value.id),'digest':value.digest});advance(actor,run,[(graph['start'],[])])
     return run
 
@@ -601,7 +634,12 @@ def task_fields(actor,run,node,task,editing=False):
         rules=node.get('field_roles',{}).get(key,{})
         if mode=='HIDDEN' or (rules.get('read') and not roles&set(rules['read'])):continue
         readonly=mode!='EDIT' or task.kind!='TASK' or not editing or key in (screen or {}).get('read_only',[]) or bool(rules.get('write') and not roles&set(rules['write']))
-        result.append({**field,'read_only':readonly,'required':key in node.get('required_fields',[]) or field['required'],'value':run.data.get(key,'')})
+        item={**field,'read_only':readonly,'required':key in node.get('required_fields',[]) or field['required'],'value':run.data.get(key,'')}
+        if field['type']=='person':
+            people=Person.objects.filter(organization=actor.organization,active=True,user__is_active=True).select_related('profile')
+            item['options']=[dict(id=str(p.id),name=p.display_name+' · '+p.user.username) for p in people if not field.get('group_id') or field['group_id'] in effective_groups(p)]
+            item['display_value']=next((p['name'] for p in item['options'] if p['id']==item['value']),'—')
+        result.append(item)
     return result
 
 
@@ -618,7 +656,7 @@ def resume_api(actor,job,mapped):
     node=next(n for n in run.graph['nodes'] if n['key']==task.node_key)
     updates={key:mapped[source] for key,source in node['output_mapping'].items() if source in mapped}
     if len(updates)!=len(node['output_mapping']):s.fail('MISSING_API_OUTPUT','프로세스에 필요한 API 결과가 없습니다.')
-    run.data.update(values_validate(run.graph.get('fields',[]),updates,False))
+    run.data.update(values_validate(run.graph.get('fields',[]),updates,False,actor=actor))
     task.status='COMPLETED';task.save(update_fields=['status'])
     if run.block_reason=='API:'+str(task.id):run.block_reason='';run.save(update_fields=['block_reason'])
     run.row_version+=1;event(actor,run,'API_COMPLETED',task.node_key,{'job_id':str(job.id),'fields':list(updates)});advance(actor,run,[(node['next'],task.frames)])

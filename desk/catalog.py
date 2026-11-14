@@ -151,6 +151,7 @@ def publish(p,data,request_id):
         types={'text':'text','textarea':'text','choice':'text','date':'text','integer':'number','boolean':'boolean'}
         for field in workflow.graph.get('fields',[]):
             source=next((f for f in fields if f['key']==field['key']),None)
+            if not source and not field['required']:continue
             if not source or types[source['type']]!=field['type'] or (field['required'] and not source['required']):s.fail('WORKFLOW_FORM_MISMATCH','워크플로우 입력 항목을 신청 양식에 같은 유형·필수 조건으로 구성하십시오.')
     if not item:
         item=CatalogItem.objects.create(organization=p.organization,code=code)
@@ -401,3 +402,8 @@ def submit(p,data,request_id):
     else:
         notify(p,t,event,'REQUEST_READY',ready_recipients(t))
     return request_data(p,t),201
+
+
+def pending_approval_requests(actor):
+    from django.db.models import Q
+    return request_query(actor).filter(Q(request_approval__approver=actor,request_approval__status='PENDING',status='PENDING_APPROVAL')|Q(process_run__tasks__kind='APPROVAL',process_run__tasks__status='OPEN',process_run__tasks__assignments__person=actor,process_run__status__in=['ACTIVE','BLOCKED'])).distinct()
