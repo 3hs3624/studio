@@ -1,5 +1,8 @@
+from .access_cache import cached
 """Fixed capability catalogue; operators compose roles, never executable rules."""
 PERMISSIONS = {
+ 'integration.manage':('API·데이터 연계 관리','조직'),'integration.invoke':('게시 API 호출','허용된 API'),
+ 'workflow.manage':('워크플로우·결재선 구성','조직'),'workflow.review':('워크플로우 독립 검토','조직'),'workflow.use':('워크플로우 업무·결재 처리','본인·할당 건'),
  'delivery.read':('소스·배포 현황 조회','조직'),'delivery.manage':('소스·배포 현황 수신','조직'),
  'console.access':('운영 콘솔 접근','조직'),
  'entity.read':('엔티티 조회','조직'),'entity.write':('엔티티 구성·게시·데이터 등록','조직'),
@@ -11,8 +14,9 @@ PERMISSIONS = {
  'procurement.manage':('구매 관리','조직'),'inventory.manage':('재고 관리','조직'),
  'users.manage':('사용자·개인정보 관리','조직'),'iam.manage':('역할·그룹 관리','조직'),'security.manage':('보안 정책 관리','조직'),
 }
-CORE = {'delivery.read','delivery.manage','console.access','entity.read','entity.write','plugin.read','plugin.configure','plugin.execute','code.read','code.write'}
+CORE = {'integration.manage','integration.invoke','workflow.manage','workflow.review','delivery.read','delivery.manage','console.access','entity.read','entity.write','plugin.read','plugin.configure','plugin.execute','code.read','code.write'}
 BUILTIN = {
+ 'EVERYONE':{'workflow.use'},
  'ORG_ADMIN': CORE | {'users.manage','iam.manage','security.manage'},
  'DEVELOPER': CORE, 'SOLUTION_OPERATOR': CORE,
  'SERVICE_MANAGER': {'service.manage'}, 'AGENT': {'service.work'},
@@ -28,13 +32,13 @@ def custom_grants(person):
     return CustomRoleGrant.objects.filter(person=person,organization_id=person.organization_id,active=True,role__active=True)
 
 
+@cached('effective')
 def effective(person):
-    from .models import RoleGrant
+    from .access_graph import role_rows,role_capabilities
+    from .menu_access import mapped_capabilities,console_access
     value=set()
-    for role in RoleGrant.objects.filter(person=person,organization_id=person.organization_id).values_list('role',flat=True):
-        value.update(BUILTIN.get(role,set()))
-    for grant in custom_grants(person).select_related('role'):
-        value.update(grant.role.permissions)
+    for row in role_rows(person):value.update(role_capabilities(person.organization,row['key'])|mapped_capabilities(person.organization,row['key']))
+    if not console_access(person):value.discard('console.access')
     return value
 
 
@@ -49,9 +53,7 @@ def require(person, permission):
 
 
 def people_with(organization,permission):
-    from django.db.models import Q
-    from .models import Person,RoleDefinition
-    builtins=[code for code,values in BUILTIN.items() if permission in values]
-    custom=[role.id for role in RoleDefinition.objects.filter(organization=organization,active=True) if permission in role.permissions]
-    return Person.objects.filter(organization=organization,active=True,user__is_active=True).filter(
-        Q(rolegrant__role__in=builtins)|Q(customrolegrant__active=True,customrolegrant__role_id__in=custom)).distinct()
+    from .models import Person
+    people=Person.objects.filter(organization=organization,active=True,user__is_active=True)
+    ids=[person.id for person in people if allowed(person,permission)]
+    return people.filter(id__in=ids)

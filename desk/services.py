@@ -25,11 +25,12 @@ def actor_for(user):
     return p
 
 def roles(p):
-    from .permissions import custom_grants, ALIASES
-    result=set(RoleGrant.objects.filter(person=p, organization=p.organization).values_list('role', flat=True))
-    for grant in custom_grants(p).select_related('role'):
-        result.update(ALIASES[key] for key in grant.role.permissions if key in ALIASES)
+    from .permissions import effective,ALIASES,BUILTIN
+    from .access_graph import role_rows
+    result={row['key'] for row in role_rows(p) if row['key'] in BUILTIN and row['key']!='EVERYONE'}
+    result.update(ALIASES[key] for key in effective(p) if key in ALIASES)
     return result
+
 
 def has_permission(p,key):
     from .permissions import allowed
@@ -53,16 +54,18 @@ def require_admin(p):
     require(p,'iam.manage')
 
 def group_ids(p):
-    if 'AGENT' not in roles(p):
-        return []
-    return list(Membership.objects.filter(person=p, organization=p.organization, group__active=True)
-                .values_list('group_id', flat=True))
+    if 'AGENT' not in roles(p):return []
+    from .access_graph import group_ids as inherited_groups
+    return inherited_groups(p)
+
 
 def staff(p, t):
     return manager(p) or (t.status != 'NEW' and t.group_id in group_ids(p))
 
 def ticket_query(p, queue=False):
     q = Ticket.objects.filter(organization=p.organization,type='INCIDENT').select_related('incident','requested_by','group','assignee','sla_instance')
+    from .data_access import restrict
+    q=restrict(p,'incidents',q,'requested_by','assignee_id')
     if manager(p):
         return q if queue else q.filter(requested_by=p)
     permitted = Q(group_id__in=group_ids(p)) & ~Q(status='NEW')
@@ -74,6 +77,8 @@ def get_ticket(p, ident, lock=False):
     q = Ticket.objects.filter(organization=p.organization,type='INCIDENT')
     if lock:
         q = q.select_for_update()
+    from .data_access import restrict
+    q=restrict(p,'incidents',q,'requested_by','assignee_id')
     t = q.filter(id=ident).first()
     if not t or not (t.requested_by_id == p.id or staff(p, t)):
         fail('NOT_FOUND', '대상을 찾을 수 없습니다.', 404)
@@ -193,6 +198,15 @@ def attach(p, t, data):
     return TicketResource.objects.create(organization=p.organization,ticket=t,**kwargs)
 
 def authorize_command(p, operation, target):
+    if operation.startswith('int_'):
+        from .integrations.service import authorize
+        authorize(p,operation,target);return
+    if operation.startswith('kpi_'):
+        from .timeliness import authorize
+        authorize(p,operation,target);return
+    if operation.startswith('flow_'):
+        from .process_engine import authorize
+        authorize(p,operation,target);return
     if operation.startswith('manage_'):
         from .identity_management import authorize
         authorize(p,operation,target)
@@ -235,6 +249,8 @@ def authorize_command(p, operation, target):
             fail('NOT_FOUND','대상을 찾을 수 없습니다.',404)
     elif operation != 'create':
         t = get_ticket(p,target,lock=True)
+        from .data_access import can_write
+        if not can_write(p,'incidents',t,'requested_by','assignee_id'):fail('FORBIDDEN','이 장애의 변경 범위를 벗어났습니다.',403)
         if operation in ('assign','attach','detach') and not (staff(p,t) or manager(p)):
             fail('FORBIDDEN','처리 권한이 없습니다.',403)
     # Replay checks visibility and command class permissions, then regenerates redacted responses.
@@ -248,6 +264,9 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
     if operation.startswith('manage_user_'):
         for personal in ('full_name','given_name','family_name','email','phone','employee_id'):
             if isinstance(hash_data.get(personal),str):hash_data[personal]=salted_hmac('command-personal',hash_data[personal],algorithm='sha256').hexdigest()
+    if operation.startswith('int_'):
+        for secret in ('secret','inputs','settings'):
+            if secret in hash_data:hash_data[secret]=salted_hmac('integration-command',json.dumps(hash_data[secret],sort_keys=True),algorithm='sha256').hexdigest()
     for secret in ('password','temporary_password'):
         if isinstance(hash_data.get(secret),str):hash_data[secret]=salted_hmac('command-secret',hash_data[secret],algorithm='sha256').hexdigest()
     digest = hashlib.sha256(json.dumps(hash_data,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
@@ -259,6 +278,8 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         # Coarse per-organization lock prioritizes correctness in the first release.
         Organization.objects.select_for_update().get(id=p.organization_id)
         p = Person.objects.select_for_update().get(id=p.id)
+        from .access_cache import clear
+        clear()
         p._recent_auth=recent_auth
         p._request_context=request_context
         p._proxy_unverified=proxy_unverified
@@ -313,6 +334,15 @@ def execute(p, operation, data, key, request_id, target=None, subtarget=None):
         return result,status
 
 def mutate(p, op, data, request_id, target, subtarget):
+    if op.startswith('int_'):
+        from .integrations.service import mutate as integration_mutate
+        return integration_mutate(p,op,data,request_id,target)
+    if op.startswith('kpi_'):
+        from .timeliness import mutate as kpi_mutate
+        return kpi_mutate(p,op,data,request_id,target)
+    if op.startswith('flow_'):
+        from .process_engine import mutate as process_mutate
+        return process_mutate(p,op,data,request_id,target)
     if op.startswith('manage_'):
         from .identity_management import mutate as manage_mutate
         return manage_mutate(p,op,data,request_id,target)

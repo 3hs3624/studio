@@ -73,7 +73,7 @@ class RenderEntrypointTests(SimpleTestCase):
             lines=log.read_text().splitlines()
             self.assertEqual(lines[0],'python manage.py migrate --noinput')
             self.assertIn('bootstrap_local_access',lines[1])
-            self.assertIn('--bind 0.0.0.0:10000',lines[2])
+            self.assertEqual(lines[2],'python deploy/run_services.py')
             self.assertEqual(len(lines),3)
 
     def test_migration_failure_prevents_server_and_bootstrap(self):
@@ -89,3 +89,12 @@ class RenderEntrypointTests(SimpleTestCase):
             result=subprocess.run(['sh',str(root/'deploy/start-render')],env={**os.environ,'PATH':str(folder)+':'+os.environ['PATH'],'STEP_LOG':str(log),'NEON_MIGRATION_TARGET_URL':'not-logged'},capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0)
             self.assertEqual(log.read_text().splitlines(),['deploy/migrate_postgres.py'])
+
+    def test_worker_failure_stops_web_and_propagates_error(self):
+        from deploy.run_services import main
+        from unittest.mock import MagicMock
+        worker=MagicMock();worker.poll.return_value=7
+        web=MagicMock();web.poll.return_value=None
+        with patch('deploy.run_services.subprocess.Popen',side_effect=[worker,web]) as spawn,patch('deploy.run_services.signal.signal'),patch.dict(os.environ,{'PORT':'10000'}):
+            self.assertEqual(main(),7)
+            self.assertIn('run_platform_worker',spawn.call_args_list[0].args[0]);self.assertIn('0.0.0.0:10000',spawn.call_args_list[1].args[0]);web.terminate.assert_called()

@@ -80,3 +80,19 @@ class SecurityPolicyMiddleware:
         if request.path.startswith(('/account/','/console/users','/console/security','/login/','/activate/')):
             response['Cache-Control']='no-store, private'
         return response
+
+
+class MenuAccessMiddleware:
+    def __init__(self,get_response):self.get_response=get_response
+    def __call__(self,request):
+        if request.user.is_authenticated:
+            from .services import actor_for,BusinessError
+            from .menu_access import path_allowed
+            from .api import error
+            from django.http import HttpResponse
+            try:
+                actor=actor_for(request.user)
+                if not path_allowed(actor,request.path):
+                    return error(request,'MENU_FORBIDDEN','이 메뉴에 대한 접근 권한이 없습니다.',403) if request.path.startswith('/api/') else HttpResponse('이 메뉴에 대한 접근 권한이 없습니다.',status=403)
+            except BusinessError:pass
+        return self.get_response(request)

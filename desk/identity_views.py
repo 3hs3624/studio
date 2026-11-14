@@ -9,7 +9,7 @@ from .permissions import require,PERMISSIONS,BUILTIN
 from .identity_management import person,role,group
 from .privacy import mask
 from .security_policy import FIELDS,LABELS,policy,state,require_recent
-from .models import (Person,Group,RoleGrant,RoleDefinition,CustomRoleGrant,Membership,PrivacyAccessEvent,AuditEvent,LoginSession,SecurityPolicy,SecurityEvent,UserProfile)
+from .models import (Person,Group,RoleGrant,RoleDefinition,CustomRoleGrant,Membership,PrivacyAccessEvent,AuditEvent,LoginSession,SecurityPolicy,SecurityEvent,UserProfile,Department)
 
 
 def tabs(base,selected,values):
@@ -26,11 +26,19 @@ def users(request,id=None):
         if text:query=query.filter(Q(user__username__icontains=text)|Q(profile__full_name__icontains=text))
         status=request.GET.get('status','')
         if status in ('active','inactive'):query=query.filter(active=status=='active')
-        if request.GET.get('group'):query=query.filter(membership__group_id=s.identifier(request.GET['group']))
+        if request.GET.get('department'):query=query.filter(department_id=s.identifier(request.GET['department']))
+        if request.GET.get('group'):
+            from .access_graph import effective_groups
+            group_id=str(s.identifier(request.GET['group']))
+            query=query.filter(id__in=[p.id for p in query if group_id in effective_groups(p)])
         if request.GET.get('role'):
             value=request.GET['role']
-            query=query.filter(rolegrant__role=value) if value in BUILTIN else query.filter(customrolegrant__role_id=s.identifier(value),customrolegrant__active=True,customrolegrant__role__active=True)
+            from .access_graph import role_rows
+            if value not in BUILTIN:s.identifier(value)
+            query=query.filter(id__in=[p.id for p in query if value in {row['key'] for row in role_rows(p)}])
         roles=[dict(code=code,name=code) for code in BUILTIN]+[dict(code=str(r.id),name=r.name) for r in RoleDefinition.objects.filter(organization=actor.organization,active=True)]
+        from .access_graph import departments_tree,role_rows,effective_groups
+        c.update(departments=departments_tree(actor.organization),copy_people=Person.objects.filter(organization=actor.organization,active=True).select_related('profile','user'),effective_roles=role_rows(selected) if selected else [],effective_groups=list(effective_groups(selected).values()) if selected else [])
         c.update(selected_user=selected,new_user=id=='new',people=query.distinct()[:100],groups=Group.objects.filter(organization=actor.organization),role_options=roles,q=text,status=status)
         if selected:
             tab=request.GET.get('tab','profile')

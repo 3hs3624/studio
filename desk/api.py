@@ -465,7 +465,8 @@ def entity_records(request, id):
     s.require_console(request.actor)
     query(request, [])
     entity = get_entity(request.actor, id)
-    return {'items':[record_data(r) for r in EntityRecord.objects.filter(
+    from .entity_service import records_query
+    return {'items':[record_data(r) for r in records_query(request.actor).filter(
         organization=request.actor.organization, entity=entity).select_related('schema_version').order_by('-created_at','-id')[:50]]}
 
 
@@ -529,7 +530,7 @@ def common_code_items(request, id):
 
 @endpoint(['POST'])
 def identity_command(request,kind,id=None):
-    commands={'users':'user_create' if id is None else 'user_save','roles':'role_save','groups':'group_save',
+    commands={'org-department':'org_department','org-department-delete':'org_department-delete','org-role-targets':'org_role-targets','org-group-targets':'org_group-targets','org-menus':'org_menus','users':'user_create' if id is None else 'user_save','roles':'role_save','groups':'group_save',
               'role-delete':'role_delete','role-grant':'role_grant','group-delete':'group_delete',
               'user-reset':'user_reset','user-unlock':'user_unlock','user-invite':'user_invite',
               'user-mfa-reset':'user_mfa_reset','user-session':'user_session','user-erase':'user_erase', 'policies':'policy_save','policy-preview':'policy_preview'}
@@ -545,3 +546,16 @@ def identity_command(request,kind,id=None):
         value['invitation_url']=request.build_absolute_uri('/activate/'+urlsafe_base64_encode(force_bytes(member.user_id))+'/#'+default_token_generator.make_token(member.user))
         return value
     return response
+
+
+@endpoint(['POST'])
+def process_command(request,action,id=None):
+    if request.path.startswith('/api/v1/processes/') and action not in ('save','review','publish','retire','clone','bind'):s.fail('NOT_FOUND','정의 관리 작업이 아닙니다.',404)
+    if request.path.startswith('/api/v1/process-runs/') and action not in ('start','act','tick','cancel','reassign','retry_children','resolve_outputs'):s.fail('NOT_FOUND','실행 작업이 아닙니다.',404)
+    if action not in ('save','review','publish','retire','clone','bind','start','act','tick','cancel','reassign','retry_children','resolve_outputs'):s.fail('NOT_FOUND','프로세스 작업을 찾을 수 없습니다.',404)
+    return command(request,'flow_'+action,id)
+
+@endpoint(['POST'])
+def timeliness_command(request,action,id=None):
+    if action not in ('policy','adjust','report'):s.fail('NOT_FOUND','KPI 작업을 찾을 수 없습니다.',404)
+    return command(request,'kpi_'+action,id)

@@ -12,12 +12,12 @@ def binding(person):
     from .services import roles
     from .permissions import effective,custom_grants
     data = {'person':str(person.id),'org':str(person.organization_id),
-            'epoch':str(person.session_epoch),'active':person.active,
+            'data_scopes':list(__import__('desk.models',fromlist=['RoleDataPolicy']).RoleDataPolicy.objects.filter(organization=person.organization,role_key__in=[r['key'] for r in __import__('desk.access_graph',fromlist=['role_rows']).role_rows(person)]).order_by('role_key','menu_key').values_list('role_key','menu_key','read_scope','write_scope')),'menus':sorted(__import__('desk.menu_access',fromlist=['menu_keys']).menu_keys(person)),'department':str(person.department_id),'epoch':str(person.session_epoch),'active':person.active,
             'organization_active':person.organization.active,'user_active':person.user.is_active,
             'roles':sorted(roles(person)),
             'permissions':sorted(effective(person)),
             'custom_roles':sorted(str(g.role_id)+':'+str(g.role.row_version) for g in custom_grants(person).select_related('role')),
-            'groups':sorted(str(x) for x in person.membership_set.filter(group__active=True).values_list('group_id',flat=True))}
+            'groups':sorted(str(x) for x in __import__('desk.access_graph',fromlist=['group_ids']).group_ids(person))}
     return hashlib.sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()
 
 def evidence(action,person=None,request=None):

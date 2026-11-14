@@ -7,7 +7,7 @@ from django.utils import timezone
 ROLES = ['SERVICE_MANAGER', 'AGENT', 'ORG_ADMIN', 'RESOURCE_READER', 'ASSET_MANAGER', 'PROCUREMENT_MANAGER', 'STOCK_MANAGER', 'DEVELOPER', 'SOLUTION_OPERATOR']
 ASSET_STATUSES = ['UNVERIFIED','STOCK','IN_USE','RETIRED']
 STATUSES = ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED']
-REQUEST_STATUSES = ['PENDING_APPROVAL','APPROVED','IN_PROGRESS','FULFILLED','CLOSED','REJECTED','CANCELLED']
+REQUEST_STATUSES = ['TRANSFERRED','PENDING_APPROVAL','APPROVED','IN_PROGRESS','FULFILLED','CLOSED','REJECTED','CANCELLED']
 
 class Base(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -16,10 +16,12 @@ class Base(models.Model):
         abstract = True
 
 class Organization(Base):
+    access_version = models.PositiveIntegerField(default=1)
     name = models.CharField(max_length=200)
     active = models.BooleanField(default=True)
 
 class Person(Base):
+    department = models.ForeignKey('Department',null=True,blank=True,on_delete=models.PROTECT)
     session_epoch = models.UUIDField(default=uuid.uuid4, editable=False)
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='person')
@@ -282,6 +284,7 @@ class CatalogItem(Base):
         constraints = [models.UniqueConstraint(fields=['organization','code'],name='catalog_item_code')]
 
 class CatalogVersion(Base):
+    workflow_version = models.ForeignKey('ProcessVersion',null=True,on_delete=models.PROTECT)
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
     item = models.ForeignKey(CatalogItem, on_delete=models.PROTECT, related_name='versions')
     version = models.PositiveIntegerField()
@@ -799,3 +802,336 @@ class DeliveryImport(Base):
     record_count = models.PositiveIntegerField()
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(provider__in=['github','jenkins']),name='delivery_import_provider')]
+
+
+class Department(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    parent = models.ForeignKey('self',null=True,blank=True,on_delete=models.PROTECT,related_name='children')
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=200)
+    description = models.CharField(max_length=500,blank=True)
+    active = models.BooleanField(default=True)
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','code'],name='department_org_code'),models.CheckConstraint(condition=~Q(id=models.F('parent_id')),name='department_not_self')]
+
+
+class GroupDepartment(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    group = models.ForeignKey(Group,on_delete=models.PROTECT)
+    department = models.ForeignKey(Department,on_delete=models.PROTECT)
+    include_children = models.BooleanField(default=False)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['group','department'],name='group_department_unique')]
+
+
+class ScopedRoleGrant(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    role_key = models.CharField(max_length=40)
+    role = models.ForeignKey(RoleDefinition,null=True,on_delete=models.PROTECT)
+    department = models.ForeignKey(Department,null=True,on_delete=models.PROTECT)
+    group = models.ForeignKey(Group,null=True,on_delete=models.PROTECT)
+    include_children = models.BooleanField(default=False)
+    class Meta:
+        constraints=[models.CheckConstraint(condition=Q(department__isnull=False,group__isnull=True)|Q(department__isnull=True,group__isnull=False),name='scoped_role_one_target'),models.UniqueConstraint(fields=['organization','role_key','department'],condition=Q(department__isnull=False),name='department_role_unique'),models.UniqueConstraint(fields=['organization','role_key','group'],condition=Q(group__isnull=False),name='group_role_unique')]
+
+
+class RoleMenuPolicy(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    role_key = models.CharField(max_length=40)
+    role = models.ForeignKey(RoleDefinition,null=True,on_delete=models.PROTECT)
+    menu_keys = models.JSONField(default=list)
+    console_button = models.BooleanField(default=False)
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','role_key'],name='role_menu_unique')]
+
+
+class ProcessDefinition(Base):
+    validation_errors = models.JSONField(default=list)
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    kind = models.CharField(max_length=12,choices=[('WORKFLOW','워크플로우'),('APPROVAL','결재선'),('SCREEN','화면')])
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=200)
+    active = models.BooleanField(default=True)
+    draft = models.JSONField(default=dict)
+    row_version = models.PositiveIntegerField(default=1)
+    draft_author = models.ForeignKey(Person,on_delete=models.PROTECT)
+    published = models.ForeignKey('ProcessVersion',null=True,on_delete=models.PROTECT,related_name='+')
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','code'],name='process_org_code'),models.CheckConstraint(condition=Q(kind__in=['WORKFLOW','APPROVAL','SCREEN']),name='process_kind')]
+
+
+class ProcessReview(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    definition = models.ForeignKey(ProcessDefinition,on_delete=models.PROTECT)
+    revision = models.PositiveIntegerField()
+    digest = models.CharField(max_length=64)
+    reviewer = models.ForeignKey(Person,on_delete=models.PROTECT)
+    reason = models.CharField(max_length=500)
+
+
+class ProcessVersion(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    definition = models.ForeignKey(ProcessDefinition,on_delete=models.PROTECT,related_name='versions')
+    version = models.PositiveIntegerField()
+    graph = models.JSONField()
+    digest = models.CharField(max_length=64)
+    published_by = models.ForeignKey(Person,on_delete=models.PROTECT,related_name='+')
+    reviewed_by = models.ForeignKey(Person,on_delete=models.PROTECT,related_name='+')
+    reason = models.CharField(max_length=500)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['definition','version'],name='process_definition_version')]
+
+
+class ProcessRetirement(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    version = models.OneToOneField(ProcessVersion,on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person,on_delete=models.PROTECT)
+    reason = models.CharField(max_length=500)
+
+
+class ProcessRun(Base):
+    block_reason = models.CharField(max_length=80,blank=True)
+    parent_task = models.ForeignKey('ProcessTask',null=True,on_delete=models.PROTECT,related_name='child_runs')
+    root_run = models.ForeignKey('self',null=True,on_delete=models.PROTECT,related_name='descendant_runs')
+    ticket = models.OneToOneField(Ticket,null=True,on_delete=models.PROTECT,related_name='process_run')
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    version = models.ForeignKey(ProcessVersion,on_delete=models.PROTECT)
+    started_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    title = models.CharField(max_length=300)
+    data = models.JSONField(default=dict)
+    graph = models.JSONField()
+    status = models.CharField(max_length=12,default='ACTIVE')
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints=[models.CheckConstraint(condition=Q(status__in=['ACTIVE','BLOCKED','COMPLETED','REJECTED','CANCELLED','TRANSFERRED']),name='process_run_status')]
+
+
+class ProcessTask(Base):
+    child_ids = models.JSONField(default=list)
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    run = models.ForeignKey(ProcessRun,on_delete=models.PROTECT,related_name='tasks')
+    node_key = models.CharField(max_length=250)
+    kind = models.CharField(max_length=12)
+    label = models.CharField(max_length=300)
+    selector = models.JSONField(default=dict)
+    person_ids = models.JSONField(default=list)
+    frames = models.JSONField(default=list)
+    mode = models.CharField(max_length=3,default='ALL')
+    status = models.CharField(max_length=12,default='OPEN')
+    due_at = models.DateTimeField(null=True)
+    row_version = models.PositiveIntegerField(default=1)
+    class Meta:
+        constraints=[models.CheckConstraint(condition=Q(status__in=['OPEN','COMPLETED','REJECTED','CANCELLED']),name='process_task_status'),models.CheckConstraint(condition=Q(kind__in=['TASK','APPROVAL','WAIT','SUBPROCESS','TRANSFER','API']),name='process_task_kind'),models.CheckConstraint(condition=Q(mode__in=['ALL','ANY']),name='process_task_mode')]
+
+
+class ProcessVote(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    task = models.ForeignKey(ProcessTask,on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person,on_delete=models.PROTECT)
+    decision = models.CharField(max_length=12)
+    reason = models.CharField(max_length=2000,blank=True)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['task','actor'],name='process_task_actor_vote'),models.CheckConstraint(condition=Q(decision__in=['COMPLETE','APPROVE','REJECT']),name='process_vote_value')]
+
+
+class ProcessArrival(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    run = models.ForeignKey(ProcessRun,on_delete=models.PROTECT)
+    fork_id = models.UUIDField()
+    branch = models.PositiveIntegerField()
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['run','fork_id','branch'],name='process_fork_arrival')]
+
+
+class ProcessEvent(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    run = models.ForeignKey(ProcessRun,on_delete=models.PROTECT,related_name='events')
+    actor = models.ForeignKey(Person,on_delete=models.PROTECT)
+    action = models.CharField(max_length=40)
+    node_key = models.CharField(max_length=250,blank=True)
+    details = models.JSONField(default=dict)
+
+
+class ProcessBinding(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    menu_key = models.CharField(max_length=80)
+    version = models.ForeignKey(ProcessVersion,on_delete=models.PROTECT)
+    updated_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    row_version = models.PositiveIntegerField(default=1)
+    reason = models.CharField(max_length=500)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','menu_key'],name='process_menu_binding')]
+
+
+class ProcessAssignment(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    task = models.ForeignKey(ProcessTask,on_delete=models.PROTECT,related_name='assignments')
+    person = models.ForeignKey(Person,on_delete=models.PROTECT)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['task','person'],name='process_task_assignee')]
+
+
+class RoleDataPolicy(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    role_key = models.CharField(max_length=40)
+    role = models.ForeignKey(RoleDefinition,null=True,on_delete=models.PROTECT)
+    menu_key = models.CharField(max_length=40)
+    read_scope = models.CharField(max_length=12,default='LEGACY')
+    write_scope = models.CharField(max_length=12,default='LEGACY')
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','role_key','menu_key'],name='role_data_scope_unique'),models.CheckConstraint(condition=Q(read_scope__in=['LEGACY','SELF','ASSIGNED','DEPARTMENT','SUBTREE','NONE']),name='read_data_scope'),models.CheckConstraint(condition=Q(write_scope__in=['LEGACY','SELF','ASSIGNED','DEPARTMENT','SUBTREE','NONE']),name='write_data_scope')]
+
+
+class TimelinessPolicy(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    ticket_type = models.CharField(max_length=20,default='SERVICE_REQUEST')
+    version = models.PositiveIntegerField()
+    name = models.CharField(max_length=200)
+    basis = models.CharField(max_length=20,default='RECEIPT')
+    target_minutes = models.PositiveIntegerField(default=1440)
+    calendar = models.ForeignKey(BusinessCalendar,null=True,on_delete=models.PROTECT)
+    published_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    reason = models.CharField(max_length=500)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','ticket_type','version'],name='timeliness_policy_version'),models.CheckConstraint(condition=Q(basis__in=['RECEIPT','AGREED_START','REQUESTED_DUE','AGREED_DUE']),name='timeliness_basis'),models.CheckConstraint(condition=Q(ticket_type__in=['INCIDENT','SERVICE_REQUEST']),name='timeliness_ticket_type'),models.CheckConstraint(condition=Q(target_minutes__gte=1,target_minutes__lte=525600),name='timeliness_budget')]
+
+class TimelinessTarget(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    ticket = models.OneToOneField(Ticket,on_delete=models.PROTECT)
+    policy = models.ForeignKey(TimelinessPolicy,null=True,on_delete=models.PROTECT)
+    snapshot = models.JSONField()
+    received_at = models.DateTimeField()
+    agreed_start_at = models.DateTimeField(null=True)
+    requested_due_at = models.DateTimeField(null=True)
+    agreed_due_at = models.DateTimeField(null=True)
+    due_at = models.DateTimeField(null=True)
+    completed_at = models.DateTimeField(null=True)
+    completion_source = models.CharField(max_length=40,blank=True)
+    status_observed = models.CharField(max_length=30)
+    row_version = models.PositiveIntegerField(default=1)
+
+class TimelinessEvent(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    target = models.ForeignKey(TimelinessTarget,on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person,null=True,on_delete=models.PROTECT)
+    action = models.CharField(max_length=30)
+    details = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500,blank=True)
+
+class TimelinessReport(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    generated_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    starts_on = models.DateField()
+    ends_on = models.DateField()
+    cohort = models.CharField(max_length=12)
+    as_of = models.DateTimeField()
+    totals = models.JSONField()
+    rows = models.JSONField()
+    digest = models.CharField(max_length=64)
+    class Meta:
+        constraints=[models.CheckConstraint(condition=Q(cohort__in=['COMPLETION','DUE']),name='timeliness_report_cohort')]
+
+class IntegrationNetworkPolicy(Base):
+    organization = models.OneToOneField(Organization,on_delete=models.PROTECT)
+    allowed_hosts = models.JSONField(default=list)
+    allowed_private_cidrs = models.JSONField(default=list)
+    updated_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    row_version = models.PositiveIntegerField(default=1)
+
+class IntegrationCredential(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    name = models.CharField(max_length=200)
+    auth_type = models.CharField(max_length=20)
+    encrypted_secret = models.TextField()
+    active = models.BooleanField(default=True)
+    row_version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    class Meta:
+        constraints=[models.CheckConstraint(condition=Q(auth_type__in=['NONE','BEARER','BASIC','API_KEY','OAUTH2_CLIENT']),name='integration_auth_type')]
+
+class IntegrationDefinition(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=200)
+    protocol = models.CharField(max_length=12)
+    active = models.BooleanField(default=True)
+    draft = models.JSONField(default=dict)
+    validation_errors = models.JSONField(default=list)
+    row_version = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    run_as = models.ForeignKey(Person,on_delete=models.PROTECT,related_name='+')
+    published = models.ForeignKey('IntegrationVersion',null=True,on_delete=models.PROTECT,related_name='+')
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','code'],name='integration_code'),models.CheckConstraint(condition=Q(protocol__in=['REST','SOAP','GRAPHQL','WEBHOOK']),name='integration_protocol')]
+
+class IntegrationVersion(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    definition = models.ForeignKey(IntegrationDefinition,on_delete=models.PROTECT,related_name='versions')
+    version = models.PositiveIntegerField()
+    settings = models.JSONField()
+    credential = models.ForeignKey(IntegrationCredential,null=True,on_delete=models.PROTECT)
+    published_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    reason = models.CharField(max_length=500)
+    digest = models.CharField(max_length=64)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['definition','version'],name='integration_version')]
+
+class IntegrationClient(Base):
+    auth_mode = models.CharField(max_length=20,default='API_KEY')
+    secret_cipher = models.TextField(blank=True)
+    rate_limit = models.PositiveIntegerField(default=60)
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    version = models.ForeignKey(IntegrationVersion,on_delete=models.PROTECT)
+    name = models.CharField(max_length=200)
+    token_hash = models.CharField(max_length=64,blank=True)
+    active = models.BooleanField(default=True)
+    issued = models.BooleanField(default=False)
+    calls = models.PositiveIntegerField(default=0)
+    window_started = models.DateTimeField(default=timezone.now)
+    created_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+
+class IntegrationJob(Base):
+    mapping_version = models.ForeignKey('IntegrationVersion',null=True,on_delete=models.PROTECT,related_name='+')
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    version = models.ForeignKey(IntegrationVersion,on_delete=models.PROTECT)
+    initiated_by = models.ForeignKey(Person,on_delete=models.PROTECT)
+    process_task = models.ForeignKey(ProcessTask,null=True,on_delete=models.PROTECT)
+    external_key = models.CharField(max_length=128)
+    input_cipher = models.TextField()
+    response_cipher = models.TextField(blank=True)
+    mapped_cipher = models.TextField(blank=True)
+    status = models.CharField(max_length=20,default='QUEUED')
+    attempts = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    lease_until = models.DateTimeField(null=True)
+    http_status = models.PositiveIntegerField(null=True)
+    error_code = models.CharField(max_length=80,blank=True)
+    completed_at = models.DateTimeField(null=True)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['organization','version','initiated_by','external_key'],name='integration_job_key'),models.CheckConstraint(condition=Q(status__in=['QUEUED','RUNNING','SUCCESS','FAILED','MAPPING_FAILED','UNKNOWN']),name='integration_job_status')]
+        indexes=[models.Index(fields=['status','next_attempt_at'],name='integration_due_job')]
+
+class IntegrationEvent(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    job = models.ForeignKey(IntegrationJob,on_delete=models.PROTECT)
+    actor = models.ForeignKey(Person,null=True,on_delete=models.PROTECT)
+    action = models.CharField(max_length=40)
+    details = models.JSONField(default=dict)
+
+class IntegrationDataLink(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    definition = models.ForeignKey(IntegrationDefinition,on_delete=models.PROTECT)
+    entity = models.ForeignKey(EntityDefinition,on_delete=models.PROTECT)
+    external_hash = models.CharField(max_length=64)
+    record = models.ForeignKey(EntityRecord,on_delete=models.PROTECT)
+    row_digest = models.CharField(max_length=64)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['definition','entity','external_hash'],name='integration_external_record')]
+
+class IntegrationDataRevision(Base):
+    organization = models.ForeignKey(Organization,on_delete=models.PROTECT)
+    link = models.ForeignKey(IntegrationDataLink,on_delete=models.PROTECT)
+    record = models.ForeignKey(EntityRecord,on_delete=models.PROTECT)
+    job = models.ForeignKey(IntegrationJob,on_delete=models.PROTECT)

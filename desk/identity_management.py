@@ -33,6 +33,8 @@ def group(actor,id):
 
 
 def authorize(actor,operation,target):
+    if operation.startswith('manage_org_'):
+        require(actor,'iam.manage');require_recent(actor);return
     if operation not in {'manage_user_create','manage_user_save','manage_user_reset','manage_user_invite','manage_user_unlock','manage_user_mfa_reset','manage_user_session','manage_user_erase','manage_role_save','manage_role_grant','manage_role_delete','manage_group_save','manage_group_delete','manage_policy_save','manage_policy_preview'}:s.fail('INVALID_OPERATION','허용되지 않은 작업입니다.')
     category=operation.split('_')[1]
     require(actor,'security.manage' if category=='policy' else 'users.manage' if category=='user' else 'iam.manage')
@@ -66,6 +68,9 @@ def finish(actor,obj,action,request_id,reason,extra=None):
 
 
 def mutate(actor,operation,data,request_id,target):
+    if operation.startswith('manage_org_'):
+        from .organization_management import mutate as organization_mutate
+        return organization_mutate(actor,operation,data,request_id,target)
     reason=s.text(data,'reason',500)
     if operation=='manage_role_save':
         s.check_fields(data,['code','name','description','permissions','active','expected_version','reason'],['code','name','description','permissions','active','expected_version','reason'])
@@ -99,8 +104,9 @@ def mutate(actor,operation,data,request_id,target):
     if operation in ('manage_role_delete','manage_group_delete'):
         s.check_fields(data,['expected_version','reason'],['expected_version','reason'])
         value=role(actor,target) if operation=='manage_role_delete' else group(actor,target);s.version(value,data)
-        if operation=='manage_role_delete' and (value.system or CustomRoleGrant.objects.filter(role=value).exists()):s.fail('IN_USE','사용 이력이 있는 역할은 삭제 대신 사용 중지하십시오.',409)
-        if operation=='manage_group_delete' and (value.triage or Membership.objects.filter(group=value).exists()):s.fail('IN_USE','접수 그룹 또는 구성원이 있는 그룹은 삭제할 수 없습니다.',409)
+        from .models import ScopedRoleGrant,RoleMenuPolicy,GroupDepartment
+        if operation=='manage_role_delete' and (value.system or CustomRoleGrant.objects.filter(role=value).exists() or ScopedRoleGrant.objects.filter(role=value).exists() or RoleMenuPolicy.objects.filter(role=value).exists()):s.fail('IN_USE','사용 이력이 있는 역할은 삭제 대신 사용 중지하십시오.',409)
+        if operation=='manage_group_delete' and (value.triage or Membership.objects.filter(group=value).exists() or GroupDepartment.objects.filter(group=value).exists() or ScopedRoleGrant.objects.filter(group=value).exists()):s.fail('IN_USE','접수 그룹 또는 구성원이 있는 그룹은 삭제할 수 없습니다.',409)
         result=finish(actor,value,'ROLE_DELETED' if operation=='manage_role_delete' else 'GROUP_DELETED',request_id,reason)
         try:value.delete()
         except ProtectedError:s.fail('IN_USE','업무 이력이 있는 그룹은 삭제 대신 사용 중지하십시오.',409)
@@ -142,7 +148,7 @@ def mutate(actor,operation,data,request_id,target):
         return dict(id=str(value.id),version=value.row_version),200
     member=person(actor,target) if target else None
     if operation=='manage_user_create':
-        s.check_fields(data,['username','full_name','email','phone','employee_id','password','invite','reason'],['username','full_name','invite','reason'])
+        s.check_fields(data,['username','full_name','email','phone','employee_id','password','invite','reason','department_id','allocation_token','role_keys','group_ids'],['username','full_name','invite','reason'])
         username=s.text(data,'username',150);User=get_user_model()
         try:User._meta.get_field('username').run_validators(username)
         except ValidationError:s.fail('INVALID_INPUT','로그인 ID 형식을 확인하십시오.')
@@ -156,16 +162,24 @@ def mutate(actor,operation,data,request_id,target):
         if not data['invite']:
             try:change_password(member,data.get('password',''),force=True)
             except ValidationError as exc:s.fail('INVALID_PASSWORD',' '.join(exc.messages))
-        return finish(actor,member,'USER_CREATED',request_id,reason,{'profile_fields':list(values),'invite':data['invite']})
+        from .organization_management import apply_new_user
+        allocations=apply_new_user(actor,member,data)
+        return finish(actor,member,'USER_CREATED',request_id,reason,{'profile_fields':list(values),'invite':data['invite'],**allocations})
     s.version(member,data)
     if operation=='manage_user_save':
-        allowed=['full_name','given_name','family_name','email','phone','employee_id','expires_on','expected_version','reason']
+        allowed=['full_name','given_name','family_name','email','phone','employee_id','expires_on','department_id','expected_version','reason']
         s.check_fields(data,allowed,['full_name','expires_on','expected_version','reason'])
         try:expiry=date.fromisoformat(data['expires_on']) if data['expires_on'] else None
         except (TypeError,ValueError):s.fail('INVALID_INPUT','사용 종료일을 확인하십시오.')
         if expiry and RoleGrant.objects.filter(person=member,role='ORG_ADMIN').exists() and not RoleGrant.objects.filter(organization=actor.organization,role='ORG_ADMIN',person__active=True,person__user__is_active=True,person__expires_on__isnull=True).exclude(person=member).exists():s.fail('LAST_ADMIN','사용 종료일이 없는 다른 시스템 관리자를 먼저 확보하십시오.',409)
         if member.id==actor.id and expiry and expiry<timezone.localdate():s.fail('SELF_LOCKOUT','현재 관리자 계정을 만료시킬 수 없습니다.',409)
         values=profile_values(data);UserProfile.objects.filter(person=member).update(**values)
+        if 'department_id' in data:
+            from .organization_management import department,delegation
+            member.department=department(actor,data['department_id']) if data['department_id'] else None
+            from .access_graph import role_rows
+            for assignment in role_rows(member):
+                if assignment['key']!='EVERYONE':delegation(actor,assignment['key'])
         member.expires_on=expiry;s.bump(member)
         PrivacyAccessEvent.objects.create(organization=actor.organization,actor=actor,subject=member,action='UPDATE',request_id=request_id)
         return finish(actor,member,'USER_PROFILE_CHANGED',request_id,reason,{'profile_fields':list(values)})

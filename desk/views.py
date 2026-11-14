@@ -305,6 +305,9 @@ def catalog_manage(request):
                  people=Person.objects.filter(organization=c['org'],active=True,user__is_active=True),
                  versions=CatalogVersion.objects.filter(organization=c['org']).select_related('item').order_by('item__code','-version'),
                  version_map={v.item.code:v.version for v in catalog.latest_versions(c['actor'],False)})
+        from .process_views import versions as process_versions
+        from .models import ProcessBinding
+        c.update(workflow_versions=process_versions(c['actor'],'WORKFLOW'),workflow_binding=ProcessBinding.objects.filter(organization=c['org'],menu_key='service-request').select_related('version__definition').first())
         return render(request,'desk/catalog-manage.html',c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message,status=exc.status)
@@ -336,6 +339,10 @@ def system_home(request,system):
         from .delivery import overview
         c.update(overview(p))
         return render(request,'desk/delivery-home.html',c)
+    from .menu_access import path_allowed
+    c['metrics']=[metric for metric in c['metrics'] if path_allowed(p,metric['url'])]
+    c['recent_items']=[item for item in c['recent_items'] if path_allowed(p,item['url'])]
+    if not path_allowed(p,c['primary_url']):c.update(primary_url='/',primary_label='통합 홈')
     labels={'NEW':'신규','ASSIGNED':'배정','IN_PROGRESS':'처리 중','PENDING':'대기','RESOLVED':'해결','CLOSED':'종료','UNVERIFIED':'미검증','STOCK':'보관','IN_USE':'사용 중','RETIRED':'폐기','ACTIVE':'운영 중','INACTIVE':'비활성'}
     for item in c['recent_items']: item['status_label']=labels.get(item['status'],item['status'])
     return render(request,'desk/system-home.html',c)
@@ -416,7 +423,7 @@ def entity_management(request, id=None):
                         item['choice_options'] = [dict(value=value,label=value) for value in field['options']]
                 if field['type'] == 'reference':
                     item['multiple'] = multiple(field)
-                    choices = EntityRecord.objects.filter(
+                    choices = __import__('desk.entity_service',fromlist=['records_query']).records_query(actor).filter(
                         organization=actor.organization, entity_id=field['target_entity_id']).select_related('schema_version').order_by('-created_at')[:100]
                     item['reference_choices'] = [
                         {'id':record.id, 'label':next((str(value)[:100] for value in record.values.values()
@@ -425,17 +432,17 @@ def entity_management(request, id=None):
                 schema_fields.append(item)
         records = []
         if entity:
-            for record in EntityRecord.objects.filter(organization=actor.organization, entity=entity).select_related('schema_version').order_by('-created_at','-id')[:20]:
+            for record in __import__('desk.entity_service',fromlist=['records_query']).records_query(actor).filter(organization=actor.organization, entity=entity).select_related('schema_version').order_by('-created_at','-id')[:20]:
                 lines = []
                 for field in record.schema_version.fields:
                     value = record.values.get(field['key'])
                     if field['type'] == 'reference' and isinstance(value, list):
-                        related = EntityRecord.objects.filter(id__in=value, organization=actor.organization,
+                        related = __import__('desk.entity_service',fromlist=['records_query']).records_query(actor).filter(id__in=value, organization=actor.organization,
                                                               entity_id=field['target_entity_id'])
                         labels = {str(item.id): next((str(v) for v in item.values.values() if isinstance(v, str) and v.strip()), str(item.id)) for item in related}
                         value = ', '.join(labels.get(item, item) for item in value)
                     elif field['type'] == 'reference' and value:
-                        related = EntityRecord.objects.filter(id=value, organization=actor.organization,
+                        related = __import__('desk.entity_service',fromlist=['records_query']).records_query(actor).filter(id=value, organization=actor.organization,
                             entity_id=field['target_entity_id']).first()
                         if related:
                             value = next((str(v) for v in related.values.values()

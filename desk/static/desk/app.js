@@ -6,7 +6,30 @@ document.querySelectorAll('.api-form').forEach(form => {
     const payload = {}, number = name => Number(inputs.get(name));
     if (form.dataset.version) payload.expected_version = Number(form.dataset.version);
     let policyPreview=false;
-    if (kind === 'security-policy') {
+    if(kind?.startsWith('kpi-')){
+      if(kind==='kpi-policy'){for(const key of ['name','ticket_type','basis','calendar_id','reason'])payload[key]=inputs.get(key);payload.target_minutes=Number(inputs.get('target_minutes'));}
+      if(kind==='kpi-report'){for(const key of ['starts_on','ends_on','cohort'])payload[key]=inputs.get(key);}
+      if(kind==='kpi-adjust'){for(const key of ['agreed_start_at','requested_due_at','agreed_due_at','reason'])payload[key]=inputs.get(key);}
+    } else if(kind?.startsWith('flow-')) {
+      payload.reason=inputs.get('reason')||'';
+      if(kind==='flow-save'){
+        Object.assign(payload,{kind:inputs.get('kind'),code:inputs.get('code'),name:inputs.get('name'),active:inputs.has('active')});
+        try{payload.graph=window.buildProcessGraph();}catch(reason){const box=form.querySelector('.form-error');box.textContent=reason.message;box.hidden=false;return;}
+      }
+      if(inputs.has('version_id'))payload.version_id=inputs.get('version_id');
+      if(inputs.has('task_id'))payload.task_id=inputs.get('task_id');
+      if(inputs.has('decision'))payload.decision=inputs.get('decision');
+      if(kind==='flow-reassign')payload.person_ids=inputs.getAll('person_ids');
+      if(['flow-start','flow-act','flow-resolve_outputs'].includes(kind)){
+        payload.values={};form.querySelectorAll('[data-process-input]').forEach(input=>{if(input.value==='')return;payload.values[input.dataset.processInput]=input.dataset.processType==='number'?Number(input.value):input.dataset.processType==='boolean'?input.value==='true':input.value;});
+        if(kind==='flow-start')payload.title=inputs.get('title');
+      }
+    } else if (kind?.startsWith('org-')) {
+      payload.reason=inputs.get('reason');
+      if(kind==='org-department'){for(const key of ['code','name','description','parent_id'])payload[key]=inputs.get(key);payload.active=inputs.has('active');}
+      if(['org-role-targets','org-group-targets'].includes(kind)){for(const key of ['person_ids','department_ids','group_ids'])if(kind==='org-role-targets'||key!=='group_ids')payload[key]=inputs.getAll(key);payload.include_children=inputs.has('include_children');}
+      if(kind==='org-menus'){payload.menu_keys=inputs.getAll('menu_keys');payload.console_button=inputs.has('console_button');payload.data_scopes={};form.querySelectorAll('[data-scope-menu]').forEach(input=>{payload.data_scopes[input.dataset.scopeMenu]??={};payload.data_scopes[input.dataset.scopeMenu][input.dataset.scopeAction]=input.value;});}
+    } else if (kind === 'security-policy') {
       payload.configuration={};form.querySelectorAll('[data-policy-field]').forEach(input=>{payload.configuration[input.dataset.policyField]=input.dataset.policyType==='boolean'?input.checked:input.dataset.policyType==='integer'?Number(input.value):input.value;});
       payload.reason=inputs.get('reason');payload.apply_confirmed=inputs.has('apply_confirmed');
       policyPreview=!!event.submitter?.hasAttribute('data-policy-preview');
@@ -16,8 +39,8 @@ document.querySelectorAll('.api-form').forEach(form => {
     } else if (kind === 'role-grant') {
       Object.assign(payload,{person_id:inputs.get('person_id'),active:inputs.has('active'),reason:inputs.get('reason')});
     } else if (kind === 'user-create' || kind === 'user-save') {
-      for(const key of ['username','full_name','given_name','family_name','email','phone','employee_id','expires_on'])if(inputs.has(key))payload[key]=inputs.get(key);
-      payload.reason=inputs.get('reason');if(kind==='user-create'){payload.invite=inputs.has('invite');if(!payload.invite)payload.password=inputs.get('password');}
+      for(const key of ['username','full_name','given_name','family_name','email','phone','employee_id','expires_on','department_id'])if(inputs.has(key))payload[key]=inputs.get(key);
+      payload.reason=inputs.get('reason');if(kind==='user-create'){payload.allocation_token=inputs.get('allocation_token');payload.role_keys=inputs.getAll('copy_roles');payload.group_ids=inputs.getAll('copy_groups');payload.invite=inputs.has('invite');if(!payload.invite)payload.password=inputs.get('password');}
     } else if (kind === 'user-reset') {
       Object.assign(payload,{password:inputs.get('password'),reason:inputs.get('reason')});
     } else if(['user-action','manage-delete','user-invite','user-session'].includes(kind)) {
@@ -86,7 +109,7 @@ document.querySelectorAll('.api-form').forEach(form => {
         response_minutes:number('response_minutes'), resolution_minutes:number('resolution_minutes'),
         warning_percent:number('warning_percent'), pause_on_pending:inputs.get('pause_on_pending')==='on'});
     } else if (kind === 'catalog-publish') {
-      Object.assign(payload, {code:inputs.get('code'), name:inputs.get('name'), description:inputs.get('description'),
+      Object.assign(payload, {workflow_version_id:inputs.get('workflow_version_id')||null,code:inputs.get('code'), name:inputs.get('name'), description:inputs.get('description'),
         fulfillment_group_id:inputs.get('fulfillment_group_id'), approval_required:inputs.get('approval_required')==='on',
         approver_id:inputs.get('approval_required')==='on' ? inputs.get('approver_id') : null,
         public_to_org:inputs.get('public_to_org')==='on', audience_group_ids:inputs.getAll('audience_group_ids'),
@@ -218,6 +241,12 @@ document.querySelectorAll('.api-form').forEach(form => {
         output.hidden = false;
         button.disabled = false;
       }
+      else if(kind==='kpi-report')location.assign('/console/slm/reports/'+result.id+'/csv');
+      else if(kind==='kpi-policy')location.reload();
+      else if(kind==='kpi-adjust')location.reload();
+      else if(kind?.startsWith('flow-'))location.assign(kind==='flow-start'||!form.dataset.detailBase?'/processes/'+result.id:form.dataset.detailBase+'/'+result.id+(kind==='flow-save'?'':'?tab=versions'));
+      else if(kind==='org-department')location.assign('/console/access?tab=departments&selected='+result.id);
+      else if(kind==='org-delete')location.assign('/console/access?tab=departments');
       else if (kind === 'manage-delete') location.assign(form.dataset.listUrl);
       else if (kind === 'role-save') location.assign('/console/roles/'+result.id);
       else if (kind === 'group-save') location.assign('/console/groups/'+result.id);
@@ -395,3 +424,20 @@ if(addCommonCode)addCommonCode.addEventListener('click',()=>{
 document.addEventListener('click',event=>{const button=event.target.closest('[data-remove-code-row]');if(button){const form=button.closest('form');button.closest('[data-code-item]').remove();dirtyConfigurationForms.add(form);}});
 
 const activationToken=document.getElementById('activation-token');if(activationToken && location.hash){activationToken.value=decodeURIComponent(location.hash.slice(1));history.replaceState(null,'',location.pathname);}
+
+
+// Native dialogs provide focus containment, Escape dismissal and focus return.
+const profileDialog=document.getElementById('self-profile-dialog');
+document.querySelectorAll('[data-profile-open]').forEach(button=>button.addEventListener('click',async()=>{
+  const content=profileDialog.querySelector('[data-profile-content]');content.textContent='불러오는 중…';profileDialog.showModal();
+  try{const response=await fetch('/account/profile',{credentials:'same-origin',headers:{Accept:'application/json'}});if(!response.ok)throw Error('사용자 정보를 불러오지 못했습니다. 다시 로그인하십시오.');const value=await response.json();content.textContent='';const list=document.createElement('dl');for(const [label,text] of [['이름',value.name],['로그인 ID',value.username],['부서',value.department],['이메일',value.email||'—'],['연락처',value.phone||'—'],['적용 역할',value.roles.map(r=>r.name+' ('+r.paths.join(' / ')+')').join(', ')],['소속 그룹',value.groups.map(g=>g.name+' ('+g.paths.join(' / ')+')').join(', ')||'없음']]){const term=document.createElement('dt'),description=document.createElement('dd');term.textContent=label;description.textContent=text;list.append(term,description);}content.append(list);}catch(error){content.textContent=error.message;}
+}));
+profileDialog?.querySelector('[data-profile-close]').addEventListener('click',()=>profileDialog.close());
+profileDialog?.addEventListener('click',event=>{if(event.target===profileDialog){const box=profileDialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)profileDialog.close();}});
+document.querySelectorAll('[data-copy-load]').forEach(button=>button.addEventListener('click',async()=>{
+ const form=button.closest('form'),kind=button.dataset.copyLoad,id=form.querySelector(kind==='user'?'[data-copy-person]':'[data-copy-department]').value,error=form.querySelector('[data-copy-error]');
+ form.querySelector('[name=allocation_token]').value='';for(const selector of ['[data-copy-roles]','[data-copy-groups]'])form.querySelector(selector).textContent='';
+ if(!id){error.textContent='복제 원본을 선택하십시오.';return;}
+ button.disabled=true;error.textContent='';
+ try{const response=await fetch('/api/v1/organization-access/copy?'+new URLSearchParams({kind,id}),{credentials:'same-origin'});const result=await response.json();if(!response.ok)throw Error(result.error?.message||'조회 실패');form.querySelector('[name=allocation_token]').value=result.token;for(const [items,selector,name,key] of [[result.roles,'[data-copy-roles]','copy_roles','key'],[result.groups,'[data-copy-groups]','copy_groups','id']]){const output=form.querySelector(selector);if(!items.length)output.textContent='복제 가능한 항목이 없습니다.';for(const item of items){const label=document.createElement('label'),checkbox=document.createElement('input');label.className='check';checkbox.type='checkbox';checkbox.name=name;checkbox.value=item[key];checkbox.checked=true;label.append(checkbox,document.createTextNode(item.name+' · '+item.paths.join(' / ')));output.append(label);}}}catch(reason){error.textContent=reason.message;}finally{button.disabled=false;}
+}));

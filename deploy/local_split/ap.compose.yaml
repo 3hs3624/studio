@@ -49,6 +49,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+  worker:
+    <<: *app
+    restart: unless-stopped
+    command: [python, manage.py, run_platform_worker]
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
   proxy:
     image: caddy:2-alpine
     restart: unless-stopped

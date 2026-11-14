@@ -14,7 +14,7 @@ INSTALLED_APPS = ['django.contrib.auth', 'django.contrib.contenttypes', 'django.
                   'django.contrib.messages', 'django.contrib.staticfiles', 'desk']
 MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'desk.middleware.RequestIDMiddleware',
               'django.contrib.sessions.middleware.SessionMiddleware', 'django.middleware.common.CommonMiddleware',
-              'django.middleware.csrf.CsrfViewMiddleware', 'django.contrib.auth.middleware.AuthenticationMiddleware', 'desk.middleware.SessionBindingMiddleware', 'desk.middleware.SecurityPolicyMiddleware',
+              'django.middleware.csrf.CsrfViewMiddleware', 'django.contrib.auth.middleware.AuthenticationMiddleware', 'desk.access_cache.AccessCacheMiddleware','desk.middleware.SessionBindingMiddleware', 'desk.middleware.SecurityPolicyMiddleware','desk.middleware.MenuAccessMiddleware',
               'django.contrib.messages.middleware.MessageMiddleware', 'django.middleware.clickjacking.XFrameOptionsMiddleware']
 ROOT_URLCONF = 'config.urls'
 TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates', 'DIRS': [], 'APP_DIRS': True,

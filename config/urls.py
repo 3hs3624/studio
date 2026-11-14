@@ -1,10 +1,37 @@
 from django.urls import path
 from django.contrib.auth.views import LogoutView
-from desk import delivery_views, identity_views, account_views, api, views, asset_views, inventory_api, purchasing_views
+from desk import integration_views, timeliness_views, process_views, organization_views, delivery_views, identity_views, account_views, api, views, asset_views, inventory_api, purchasing_views
 
 handler404 = 'desk.api.not_found'
 handler500 = 'desk.api.server_error'
 urlpatterns = [
+    path('api/integration-clients/<uuid:client_id>/call',integration_views.receive),
+    path('api/integration-clients/<uuid:client_id>/jobs/<uuid:job_id>',integration_views.receive),
+    path('console/integrations',integration_views.manage),
+    path('console/integrations/<uuid:id>',integration_views.manage),
+    path('api/v1/integrations/spec',integration_views.import_spec),
+    path('api/v1/integrations/jobs/<uuid:id>',integration_views.job),
+    path('api/v1/integrations/<str:action>',integration_views.command),
+    path('api/v1/integrations/<str:action>/<uuid:id>',integration_views.command),
+    path('console/slm',timeliness_views.manage),
+    path('console/slm/reports/<uuid:report_id>/csv',timeliness_views.manage,{'csv':True}),
+    path('console/slm/agreements/<uuid:id>',timeliness_views.agreement),
+    path('api/v1/timeliness/<str:action>',api.timeliness_command),
+    path('api/v1/timeliness/<str:action>/<str:id>',api.timeliness_command),
+    path('console/screens',process_views.manage,{'kind':'SCREEN'}),
+    path('console/screens/<uuid:id>',process_views.manage,{'kind':'SCREEN'}),
+    path('console/workflows',process_views.manage,{'kind':'WORKFLOW'}),
+    path('console/workflows/<uuid:id>',process_views.manage,{'kind':'WORKFLOW'}),
+    path('console/approval-lines',process_views.manage,{'kind':'APPROVAL'}),
+    path('console/approval-lines/<uuid:id>',process_views.manage,{'kind':'APPROVAL'}),
+    path('processes',process_views.inbox),
+    path('processes/<uuid:id>',process_views.inbox),
+    path('api/v1/processes/<str:action>',api.process_command),
+    path('api/v1/processes/<str:action>/<str:id>',api.process_command),
+    path('api/v1/process-runs/<str:action>',api.process_command),
+    path('api/v1/process-runs/<str:action>/<str:id>',api.process_command),
+    path('account/profile',organization_views.my_profile),
+    path('api/v1/organization-access/copy',organization_views.copy_preview),
     path('resources/changes',delivery_views.listing,{'kind':'SOURCE'}),
     path('resources/changes/<uuid:id>',delivery_views.listing,{'kind':'SOURCE'}),
     path('resources/deployments',delivery_views.listing,{'kind':'DEPLOYMENT'}),
@@ -23,7 +50,7 @@ urlpatterns = [
     path('login/mfa/', account_views.mfa_login),
     path('activate/<str:uid>/', account_views.activate_account),
     path('console', views.console_home),
-    path('console/access', views.admin_access),
+    path('console/access', organization_views.access),
     path('console/entities', views.entity_management),
     path('console/entities/<uuid:id>', views.entity_management),
     path('console/plugins', views.plugin_management),

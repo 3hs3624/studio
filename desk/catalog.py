@@ -33,7 +33,7 @@ def offering(p,item_id):
 
 def catalog_data(v,management=False):
     data={'id':str(v.item_id),'catalog_version_id':str(v.id),'code':v.item.code,'name':v.name,
-          'description':v.description,'version':v.version,'fields':v.fields,'approval_required':v.approval_required}
+          'workflow_version_id':str(v.workflow_version_id) if v.workflow_version_id else None,'workflow_name':v.workflow_version.definition.name if v.workflow_version_id else None,'workflow_version':v.workflow_version.version if v.workflow_version_id else None,'description':v.description,'version':v.version,'fields':v.fields,'approval_required':v.approval_required}
     if management:
         data.update(fulfillment_group_id=str(v.fulfillment_group_id),approver_id=str(v.approver_id) if v.approver_id else None,
             public_to_org=v.public_to_org,available=v.available,
@@ -105,7 +105,7 @@ def publish(p,data,request_id):
     require_manager(p)
     names=['code','name','description','fulfillment_group_id','approval_required','approver_id',
            'public_to_org','audience_group_ids','available','fields','expected_version']
-    s.check_fields(data,names,names)
+    s.check_fields(data,names+['workflow_version_id'],names)
     code=s.text(data,'code',40).upper()
     if not re.fullmatch(r'[A-Z][A-Z0-9_-]{0,39}',code):
         s.fail('INVALID_CODE','서비스 코드는 영문자로 시작하는 영문·숫자·밑줄·하이픈이어야 합니다.')
@@ -122,6 +122,14 @@ def publish(p,data,request_id):
     group=Group.objects.filter(id=s.identifier(data['fulfillment_group_id']),organization=p.organization,active=True).first()
     if not group:
         s.fail('INVALID_GROUP','활성 처리 그룹을 선택하십시오.')
+    workflow=None
+    from .models import ProcessBinding
+    binding=ProcessBinding.objects.filter(organization=p.organization,menu_key='service-request').first()
+    workflow_id=data.get('workflow_version_id') or (str(binding.version_id) if binding else None)
+    if workflow_id:
+        from .process_engine import version as process_version
+        workflow=process_version(p,workflow_id,'WORKFLOW',True)
+        data={**data,'approval_required':False,'approver_id':None}
     approver=None
     if data['approval_required']:
         approver=Person.objects.filter(id=s.identifier(data['approver_id']),organization=p.organization,active=True,user__is_active=True).first()
@@ -139,9 +147,14 @@ def publish(p,data,request_id):
     if len(groups)!=len(ids):
         s.fail('INVALID_AUDIENCE','같은 조직의 활성 그룹만 선택하십시오.')
     fields=validate_fields(data['fields'])
+    if workflow:
+        types={'text':'text','textarea':'text','choice':'text','date':'text','integer':'number','boolean':'boolean'}
+        for field in workflow.graph.get('fields',[]):
+            source=next((f for f in fields if f['key']==field['key']),None)
+            if not source or types[source['type']]!=field['type'] or (field['required'] and not source['required']):s.fail('WORKFLOW_FORM_MISMATCH','워크플로우 입력 항목을 신청 양식에 같은 유형·필수 조건으로 구성하십시오.')
     if not item:
         item=CatalogItem.objects.create(organization=p.organization,code=code)
-    version=CatalogVersion.objects.create(organization=p.organization,item=item,version=expected+1,
+    version=CatalogVersion.objects.create(workflow_version=workflow,organization=p.organization,item=item,version=expected+1,
         name=s.text(data,'name',200),description=s.text(data,'description',10000),fulfillment_group=group,
         approver=approver,approval_required=data['approval_required'],public_to_org=data['public_to_org'],available=data['available'],fields=fields)
     for audience in groups:
@@ -154,13 +167,15 @@ def request_staff(p,t):
 
 def request_query(p,scope='visible'):
     qs=Ticket.objects.filter(organization=p.organization,type='SERVICE_REQUEST').select_related('service_request','group','assignee','requested_by','request_approval')
+    from .data_access import restrict
+    qs=restrict(p,'requests',qs,'requested_by','assignee_id')
     if scope=='mine':
         return qs.filter(requested_by=p)
     if scope=='queue':
         return qs if s.manager(p) else qs.filter(group_id__in=s.group_ids(p),status__in=WORK_STATES)
     if s.manager(p):
         return qs
-    return qs.filter(Q(requested_by=p)|Q(request_approval__approver=p)|Q(group_id__in=s.group_ids(p),status__in=WORK_STATES))
+    return qs.filter(Q(requested_by=p)|Q(request_approval__approver=p)|Q(group_id__in=s.group_ids(p),status__in=WORK_STATES)|Q(process_run__tasks__assignments__person=p)|Q(process_run__descendant_runs__tasks__assignments__person=p)).distinct()
 
 def get_request(p,ident,lock=False):
     # No nullable joins in SELECT FOR UPDATE; the organization is already locked for commands.
@@ -179,6 +194,7 @@ def approval_for(t):
         return None
 
 def allowed_actions(p,t):
+    if t.service_request.catalog_version.workflow_version_id:return []
     actions=[]
     owner=t.requested_by_id==p.id
     if owner and t.status in ('PENDING_APPROVAL','APPROVED'):
@@ -209,6 +225,17 @@ def request_data(p,t,detail=True):
                   'decision':decision.decision if decision else None,'reason':decision.reason if decision else None} if approval else None)
     from .assets import request_asset_events
     result['asset_events']=request_asset_events(p,t)
+    if sr.catalog_version.workflow_version_id:
+        from .models import ProcessRun
+        run=ProcessRun.objects.filter(ticket=t).first()
+        result.update(can_assign=False,can_decide=False,allowed_actions=[],process_run_id=str(run.id) if run else None,process_status=run.status if run else None)
+        if run and (run.graph.get('screen') or any(node.get('screen') for node in run.graph['nodes'])):
+            from .process_engine import task_fields
+            tasks=list(run.tasks.filter(status='OPEN')) or list(run.tasks.order_by('-created_at')[:1]);visible=set()
+            for task in tasks:
+                node=next(n for n in run.graph['nodes'] if n['key']==task.node_key)
+                visible.update(field['key'] for field in task_fields(p,run,node,task))
+            result['fields']=[field for field in result['fields'] if field['key'] in visible];result['values']={key:value for key,value in result['values'].items() if key in visible}
     return result
 
 def notify(p,t,event,kind,recipients):
@@ -229,6 +256,9 @@ def authorize(p,op,target):
     if op=='req_create':
         return
     t=get_request(p,target,True)
+    from .data_access import can_write
+    if not can_write(p,'requests',t,'requested_by','assignee_id'):s.fail('FORBIDDEN','이 요청의 변경 범위를 벗어났습니다.',403)
+    if op in ('req_assign','req_decision','req_action') and t.service_request.catalog_version.workflow_version_id:s.fail('WORKFLOW_MANAGED','연결된 워크플로우 업무·결재 화면에서 처리하십시오.',409)
     if op=='req_assign' and not request_staff(p,t):
         s.fail('FORBIDDEN','요청 처리 권한이 없습니다.',403)
     if op=='req_decision':
@@ -354,12 +384,19 @@ def submit(p,data,request_id):
             status='PENDING_APPROVAL' if v.approval_required else 'APPROVED')
     snapshot=catalog_data(v,True)
     ServiceRequest.objects.create(organization=p.organization,ticket=t,catalog_version=v,values=values,snapshot=snapshot,resubmission_of=previous)
+    if v.workflow_version_id:
+        from .process_engine import version as process_version,start_run
+        workflow=process_version(p,str(v.workflow_version_id),'WORKFLOW',True)
+        keys={field['key'] for field in workflow.graph.get('fields',[])}
+        start_run(p,workflow,v.name,{key:val for key,val in values.items() if key in keys},ticket=t);t.refresh_from_db()
     if v.approval_required:
         RequestApproval.objects.create(organization=p.organization,ticket=t,approver=v.approver)
     s.history(p,t,'')
     event=s.record(p,t,'SERVICE_REQUEST_CREATED',request_id,after={'status':t.status,'catalog_version_id':str(v.id),
             'resubmission_of':str(previous.id) if previous else None})
-    if v.approval_required:
+    if v.workflow_version_id:
+        pass
+    elif v.approval_required:
         notify(p,t,event,'APPROVAL_REQUESTED',[v.approver_id])
     else:
         notify(p,t,event,'REQUEST_READY',ready_recipients(t))

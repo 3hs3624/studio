@@ -212,6 +212,8 @@ def create_record(actor, payload, request_id, target):
         s.fail('RELATION_CONFLICT', '관계 제약과 중복 연결 여부를 확인하십시오.', 409)
     s.record(actor, record, 'ENTITY_RECORD_CREATED', request_id,
              after={'entity_id':str(entity.id), 'schema_version_id':str(schema.id), 'field_keys':list(values)})
+    from .data_access import can_write
+    if not can_write(actor,'entities',record,'created_by'):s.fail('FORBIDDEN','이 엔티티의 등록 범위를 벗어났습니다.',403)
     return record_data(record), 201
 
 
@@ -265,7 +267,7 @@ def validate_reference(actor, schema, field, value):
     ids = [str(s.identifier(item)) for item in values]
     if len(set(ids)) != len(ids):
         s.fail('INVALID_ENTITY_VALUE', '같은 대상을 중복 연결할 수 없습니다.')
-    count = EntityRecord.objects.filter(id__in=ids, organization=actor.organization,
+    count = records_query(actor).filter(id__in=ids, organization=actor.organization,
                                        entity_id=field['target_entity_id']).count()
     if count != len(ids):
         s.fail('INVALID_ENTITY_VALUE', '현재 조직의 올바른 대상 레코드를 선택하십시오.')
@@ -276,13 +278,14 @@ def validate_reference(actor, schema, field, value):
 
 
 def related_data(actor, entity, record_id):
-    record = EntityRecord.objects.filter(organization=actor.organization, entity=entity,
+    record = records_query(actor).filter(organization=actor.organization, entity=entity,
                                          id=s.identifier(record_id)).first()
     if not record:
         s.fail('NOT_FOUND', '데이터를 찾을 수 없습니다.', 404)
-    links = EntityRecordLink.objects.filter(organization=actor.organization).filter(
+    visible=records_query(actor).values('id')
+    links = EntityRecordLink.objects.filter(organization=actor.organization,source_id__in=visible,target_id__in=visible).filter(
         Q(source=record) | Q(target=record)).select_related('source', 'target').order_by('field_key', 'id')[:200]
-    junctions = EntityRecord.objects.filter(organization=actor.organization).filter(
+    junctions = records_query(actor).filter(organization=actor.organization).filter(
         Q(junction_left=record) | Q(junction_right=record)).order_by('id')[:200]
     return dict(record=record_data(record), links=[dict(
         id=str(link.id), field=link.field_key,
@@ -293,3 +296,8 @@ def related_data(actor, entity, record_id):
         junctions=[dict(id=str(item.id), entity_id=str(item.entity_id),
                         left_id=str(item.junction_left_id), right_id=str(item.junction_right_id),
                         values=item.values) for item in junctions])
+
+
+def records_query(actor):
+    from .data_access import restrict
+    return restrict(actor,'entities',EntityRecord.objects.filter(organization=actor.organization),'created_by')

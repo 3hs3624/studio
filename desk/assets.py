@@ -16,7 +16,8 @@ def require_manager(p):
 
 def query(p):
     qs=Asset.objects.filter(organization=p.organization).select_related('custodian','stock_record')
-    return qs if full_reader(p) else qs.filter(Q(portal_visible=True)|Q(custodian=p))
+    from .data_access import restrict
+    return restrict(p,'assets',qs if full_reader(p) else qs.filter(Q(portal_visible=True)|Q(custodian=p)),'custodian')
 
 def get_asset(p,ident,lock=False):
     qs=Asset.objects.filter(organization=p.organization)
@@ -79,7 +80,9 @@ def history_data(h,p,personal=False):
 def authorize(p,op,target):
     require_manager(p)
     if op!='asset_create':
-        get_asset(p,target,True)
+        obj=get_asset(p,target,True)
+        from .data_access import can_write
+        if not can_write(p,'assets',obj,'custodian'):s.fail('FORBIDDEN','이 자산의 변경 범위를 벗어났습니다.',403)
 
 def replay(p,op,payload,result):
     a=get_asset(p,s.identifier(result['id']))

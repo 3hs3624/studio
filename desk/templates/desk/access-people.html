@@ -1,0 +1,1 @@
+<div class="assignment-options">{% for row in access_people %}<label class="check"><input type="checkbox" name="person_ids" value="{{ row.id }}" {% if row.id|stringformat:'s' in selected_people %}checked{% endif %}>{{ row.display_name }} <small>{{ row.user.username }}</small></label>{% endfor %}</div>
