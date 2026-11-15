@@ -176,3 +176,5 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 @media(max-width:700px){.primary,.secondary{min-height:40px}.designer-workspace{grid-template-columns:1fr}.designer-properties{display:block}.designer-type-grid{width:100%;grid-template-columns:repeat(3,minmax(0,1fr))}.designer-type-grid button{min-height:40px}}
 
 .configuration-impact{padding:16px;margin:0 0 20px;background:#f4f4f4;border-left:3px solid #0f62fe}.configuration-impact summary{font-weight:600;cursor:pointer}.configuration-impact p{margin:12px 0}.configuration-impact h3{margin-top:16px}
+
+.designer-type-grid button[draggable=true]{cursor:grab}.designer-type-grid button[draggable=true]:active{cursor:grabbing}.designer-drop-target{outline:2px dashed #0f62fe;outline-offset:-2px;background:#edf5ff}

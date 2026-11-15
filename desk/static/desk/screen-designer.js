@@ -3,7 +3,7 @@
 const bridge=window.screenEditorBridge,dialog=document.getElementById('screen-designer');if(!bridge||!dialog)return;
 const property=document.getElementById('screen-field-properties'),form=property.querySelector('form'),canvas=dialog.querySelector('[data-designer-canvas]'),query=s=>dialog.querySelector(s),clone=v=>JSON.parse(JSON.stringify(v));
 const fieldTypes=JSON.parse(document.getElementById('process-field-types').textContent);
-let state,selected='',groupKey='',dragKey='',undo=[],redo=[],sequence=0,propertyKey='';
+let state,selected='',groupKey='',dragKey='',dragType='',undo=[],redo=[],sequence=0,propertyKey='';
 const element=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
 const button=(text,action)=>{const b=element('button',text);b.type='button';b.className='secondary';b.addEventListener('click',action);return b;};
 window.reconcileScreenLayout=(layout,fields,columns)=>{
@@ -20,6 +20,25 @@ function move(key,target,before=''){
  const found=locate(key);if(!found||key===before)return;const destination=state.layout.groups.find(g=>g.key===target);if(!destination)return;
  change(()=>{found.group.fields=found.group.fields.filter(i=>i.key!==key);let index=destination.fields.findIndex(i=>i.key===before);if(index<0)index=destination.fields.length;destination.fields.splice(index,0,found.item);groupKey=target;selected=key;});
 }
+function addField(type,target=groupKey,before=''){
+ if(!fieldTypes.some(f=>f.key===type))return;
+ if(state.fields.length>=30){error('화면 항목은 최대 30개입니다.');return;}
+ const destination=state.layout.groups.find(g=>g.key===target);if(!destination)return;
+ change(()=>{let key;do{key='field_'+(++sequence);}while(state.fields.some(f=>f.key===key));
+  state.fields.push({key,label:'새 항목 '+sequence,type,required:false});
+  const index=destination.fields.findIndex(f=>f.key===before);destination.fields.splice(index<0?destination.fields.length:index,0,{key,span:1,height:1});selected=key;groupKey=target;
+ });
+}
+function drop(event,target,before=''){
+ event.preventDefault();event.stopPropagation();
+ if(dragType)addField(dragType,target,before);else if(dragKey)move(dragKey,target,before);
+ dragType='';dragKey='';
+}
+function acceptDrop(node,target){
+ node.addEventListener('dragover',event=>{if(!dragType&&!dragKey)return;event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect=dragType?'copy':'move';node.classList.add('designer-drop-target');});
+ node.addEventListener('dragleave',event=>{if(!node.contains(event.relatedTarget))node.classList.remove('designer-drop-target');});
+ node.addEventListener('drop',event=>{node.classList.remove('designer-drop-target');drop(event,target,event.target.closest('[data-designer-field]')?.dataset.designerField||'');});
+}
 function reorder(offset){const found=locate(selected);if(!found)return;const items=found.group.fields,index=items.indexOf(found.item),next=index+offset;if(next<0||next>=items.length)return;change(()=>{items.splice(index,1);items.splice(next,0,found.item);});canvas.querySelector('[data-designer-field="'+CSS.escape(selected)+'"]')?.focus({preventScroll:true});}
 function render(){
  state.layout=window.reconcileScreenLayout(state.layout,state.fields,state.columns);if(!state.layout.groups.some(g=>g.key===groupKey))groupKey=state.layout.groups[0].key;
@@ -28,14 +47,14 @@ function render(){
  for(const name of ['properties','up','down','delete'])query('[data-designer-'+name+']').disabled=!locate(selected);
  const list=query('[data-designer-group-list]');list.replaceChildren();for(const g of state.layout.groups){const b=button(g.label+' ('+g.fields.length+')',()=>{groupKey=g.key;render();});b.classList.add('designer-group-choice');b.setAttribute('aria-pressed',String(g.key===groupKey));list.append(b);}
  canvas.replaceChildren();canvas.style.setProperty('--designer-columns',state.columns);
- if(state.layout.mode==='tabs'){const tabs=element('div');tabs.className='designer-tabs';for(const g of state.layout.groups){const b=button(g.label,()=>{groupKey=g.key;render();});b.setAttribute('aria-pressed',String(g.key===groupKey));b.addEventListener('dragover',e=>{e.preventDefault();});b.addEventListener('drop',e=>{e.preventDefault();move(dragKey,g.key);});tabs.append(b);}canvas.append(tabs);}
- for(const g of state.layout.groups){const section=element('section');section.className='designer-group';section.dataset.designerGroup=g.key;section.hidden=state.layout.mode==='tabs'&&g.key!==groupKey;
+ if(state.layout.mode==='tabs'){const tabs=element('div');tabs.className='designer-tabs';for(const g of state.layout.groups){const b=button(g.label,()=>{groupKey=g.key;render();});b.setAttribute('aria-pressed',String(g.key===groupKey));acceptDrop(b,g.key);tabs.append(b);}canvas.append(tabs);}
+ for(const g of state.layout.groups){const section=element('section');section.className='designer-group';section.dataset.designerGroup=g.key;section.hidden=state.layout.mode==='tabs'&&g.key!==groupKey;acceptDrop(section,g.key);
   const heading=button(g.label,()=>{groupKey=g.key;render();});heading.classList.add('designer-group-heading');heading.setAttribute('aria-pressed',String(g.key===groupKey));section.append(heading);
-  const grid=element('div');grid.className='designer-field-grid';grid.dataset.dropGroup=g.key;grid.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';});grid.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();const target=e.target.closest('[data-designer-field]');move(dragKey,g.key,target?.dataset.designerField||'');});
+  const grid=element('div');grid.className='designer-field-grid';grid.dataset.dropGroup=g.key;acceptDrop(grid,g.key);
   if(!g.fields.length){const hint=element('p');hint.textContent='필드를 추가하거나 이곳으로 끌어 놓으십시오.';hint.className='designer-empty';grid.append(hint);}
   for(const item of g.fields){const f=state.fields.find(f=>f.key===item.key),card=element('div');card.className='designer-field';card.dataset.designerField=f.key;card.draggable=true;card.tabIndex=0;card.setAttribute('aria-label',f.label+' · 필드 이동 및 크기 조정');card.style.setProperty('--field-span',item.span);card.style.setProperty('--field-height',item.height*48+'px');if(selected===f.key)card.classList.add('selected');
    card.append(element('strong',f.label+(f.required?' *':'')));const sample=element('div',(fieldTypes.find(t=>t.key===f.type)?.label||f.type)+' 입력');sample.className='designer-sample';card.append(sample);card.append(element('small',f.key+' · '+item.span+'열 · '+item.height*48+'px'+(state.read_only.includes(f.key)?' · 조회 전용':'')));
-   card.addEventListener('click',()=>select(f.key));card.addEventListener('contextmenu',e=>{e.preventDefault();selected=f.key;groupKey=g.key;openProperties();});card.addEventListener('dragstart',e=>{dragKey=f.key;e.dataTransfer.setData('text/plain',f.key);e.dataTransfer.effectAllowed='move';});card.addEventListener('dragend',()=>dragKey='');
+   card.addEventListener('click',()=>select(f.key));card.addEventListener('contextmenu',e=>{e.preventDefault();selected=f.key;groupKey=g.key;openProperties();});card.addEventListener('dragstart',e=>{dragType='';dragKey=f.key;e.dataTransfer.setData('text/plain',f.key);e.dataTransfer.effectAllowed='move';});card.addEventListener('dragend',()=>dragKey='');
    card.addEventListener('keydown',e=>{if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){e.preventDefault();selected=f.key;openProperties();}else if(e.ctrlKey&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();selected=f.key;reorder(['ArrowUp','ArrowLeft'].includes(e.key)?-1:1);}else if(e.shiftKey&&e.key.startsWith('Arrow')){e.preventDefault();change(()=>{if(e.key==='ArrowLeft')item.span=Math.max(1,item.span-1);if(e.key==='ArrowRight')item.span=Math.min(state.columns,item.span+1);if(e.key==='ArrowUp')item.height=Math.max(1,item.height-1);if(e.key==='ArrowDown')item.height=Math.min(5,item.height+1);});}});
    const resize=button('↘',()=>{});resize.className='designer-resize';resize.setAttribute('aria-label',f.label+' 크기 조정');resize.draggable=false;resize.addEventListener('click',e=>e.stopPropagation());resize.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();selected=f.key;const old=clone(state),start={x:e.clientX,y:e.clientY,span:item.span,height:item.height},step=(grid.getBoundingClientRect().width+16)/state.columns;resize.setPointerCapture(e.pointerId);
     const update=ev=>{item.span=Math.max(1,Math.min(state.columns,start.span+Math.round((ev.clientX-start.x)/step)));item.height=Math.max(1,Math.min(5,start.height+Math.round((ev.clientY-start.y)/48)));card.style.setProperty('--field-span',item.span);card.style.setProperty('--field-height',item.height*48+'px');};
@@ -54,7 +73,13 @@ form.addEventListener('submit',e=>{e.preventDefault();const key=form.elements.ke
  change(()=>{const f=state.fields.find(f=>f.key===propertyKey),found=locate(propertyKey);f.key=key;f.label=label;f.type=form.elements.type.value;f.required=form.elements.required.checked;delete f.default;delete f.default_function;if(defaultValue!==undefined)f.default=defaultValue;if(form.elements.default_function.value)f.default_function=form.elements.default_function.value;for(const name of ['max_length','precision','scale','description'])delete f[name];if(['text','textarea','email','phone','url'].includes(f.type)&&form.elements.max_length.value)f.max_length=Number(form.elements.max_length.value);if(f.type==='decimal')for(const name of ['precision','scale'])if(form.elements[name].value!=='')f[name]=Number(form.elements[name].value);if(form.elements.description.value)f.description=form.elements.description.value;delete f.group_id;if(f.type==='person'&&form.elements.group_id.value)f.group_id=form.elements.group_id.value;const index=found.group.fields.indexOf(found.item),destination=state.layout.groups.find(g=>g.key===form.elements.group.value);found.group.fields=found.group.fields.filter(i=>i.key!==propertyKey);destination.fields.splice(destination===found.group?index:destination.fields.length,0,{key,span,height});state.read_only=state.read_only.filter(k=>k!==propertyKey);if(form.elements.readonly.checked)state.read_only.push(key);selected=key;groupKey=form.elements.group.value;});property.close();});
 property.querySelector('[data-property-cancel]').addEventListener('click',()=>property.close());
 query('[data-designer-properties]').addEventListener('click',openProperties);
-for(const b of dialog.querySelectorAll('[data-designer-add]'))b.addEventListener('click',()=>{if(state.fields.length>=30){error('화면 항목은 최대 30개입니다.');return;}change(()=>{let key;do{key='field_'+(++sequence);}while(state.fields.some(f=>f.key===key));state.fields.push({key,label:'새 항목 '+sequence,type:b.dataset.designerAdd,required:false});group().fields.push({key,span:1,height:1});selected=key;});});
+for(const b of dialog.querySelectorAll('[data-designer-add]')){
+ let dragEndedAt=0;b.draggable=true;b.title+=' · 클릭하거나 그룹으로 끌어 놓기';
+ b.addEventListener('click',()=>{if(Date.now()-dragEndedAt>200)addField(b.dataset.designerAdd);});
+ b.addEventListener('dragstart',event=>{dragKey='';dragType=b.dataset.designerAdd;event.dataTransfer.setData('text/plain',dragType);event.dataTransfer.effectAllowed='copy';});
+ b.addEventListener('dragend',()=>{dragEndedAt=Date.now();dragType='';dragKey='';dialog.querySelectorAll('.designer-drop-target').forEach(node=>node.classList.remove('designer-drop-target'));});
+}
+
 query('[data-designer-add-group]').addEventListener('click',()=>{if(state.layout.groups.length>=20){error('그룹은 최대 20개입니다.');return;}change(()=>{let key;do{key='group_'+(++sequence);}while(state.layout.groups.some(g=>g.key===key));state.layout.groups.push({key,label:'새 그룹 '+sequence,fields:[]});groupKey=key;});});
 query('[data-designer-group-name]').addEventListener('change',e=>{const name=e.target.value.trim();if(!name){error('그룹 이름을 입력하십시오.');return;}change(()=>group().label=name);});
 query('[data-designer-remove-group]').addEventListener('click',()=>{if(state.layout.groups.length===1){error('그룹은 하나 이상 필요합니다.');return;}change(()=>{const old=group(),destination=state.layout.groups.find(g=>g.key!==old.key);destination.fields.push(...old.fields);state.layout.groups=state.layout.groups.filter(g=>g.key!==old.key);groupKey=destination.key;});});
