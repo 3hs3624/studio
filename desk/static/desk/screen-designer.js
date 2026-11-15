@@ -86,6 +86,46 @@ query('[data-designer-remove-group]').addEventListener('click',()=>{if(state.lay
 query('[data-designer-delete]').addEventListener('click',()=>{if(!selected)return;change(()=>{for(const g of state.layout.groups)g.fields=g.fields.filter(i=>i.key!==selected);state.fields=state.fields.filter(f=>f.key!==selected);state.read_only=state.read_only.filter(k=>k!==selected);selected='';});});
 query('[data-designer-up]').addEventListener('click',()=>reorder(-1));query('[data-designer-down]').addEventListener('click',()=>reorder(1));
 query('[data-designer-mode]').addEventListener('change',e=>change(()=>state.layout.mode=e.target.value));query('[data-designer-columns]').addEventListener('change',e=>change(()=>state.columns=Number(e.target.value)));
+const preview=document.getElementById('screen-designer-preview'),previewContent=preview.querySelector('[data-preview-content]');
+function openPreview(){
+ previewContent.replaceChildren();previewContent.classList.remove('preview-mobile');
+ preview.querySelector('[data-preview-desktop]').setAttribute('aria-pressed','true');preview.querySelector('[data-preview-mobile]').setAttribute('aria-pressed','false');
+ const groups=state.layout.groups.filter(g=>g.fields.length),panels=[],tabs=[];
+ const activate=(index,focus=false)=>{for(let i=0;i<panels.length;i++){panels[i].hidden=i!==index;tabs[i].setAttribute('aria-selected',String(i===index));tabs[i].tabIndex=i===index?0:-1;}if(focus)tabs[index].focus();};
+ const tablist=element('div');tablist.className='screen-group-tabs';tablist.setAttribute('role','tablist');tablist.setAttribute('aria-label','미리보기 그룹');
+ if(state.layout.mode==='tabs')previewContent.append(tablist);
+ for(const [index,g] of groups.entries()){
+  const section=element('fieldset');section.className='screen-field-group';section.id='preview-group-'+g.key;section.append(element('legend',g.label));
+  if(state.layout.mode==='tabs'){
+   const tab=button(g.label,()=>activate(index));tab.id='preview-tab-'+g.key;tab.setAttribute('role','tab');tab.setAttribute('aria-controls',section.id);section.setAttribute('role','tabpanel');section.setAttribute('aria-labelledby',tab.id);
+   tab.addEventListener('keydown',event=>{const offset=event.key==='ArrowRight'?1:event.key==='ArrowLeft'?-1:0;let next;if(offset)next=(index+offset+groups.length)%groups.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=groups.length-1;else return;event.preventDefault();activate(next,true);});tabs.push(tab);tablist.append(tab);
+  }
+  const grid=element('div');grid.className='process-form-grid columns-'+state.columns;
+  for(const item of g.fields){
+   const field=state.fields.find(f=>f.key===item.key);if(!field)continue;
+   const label=element('label',field.label+(field.required?' *':''));label.className='screen-field screen-span-'+item.span+' screen-height-'+item.height;
+   const value=field.default??'';let control;
+   if(state.read_only.includes(field.key)){
+    control=element('span',field.type==='boolean'&&typeof value==='boolean'?(value?'예':'아니오'):typeof value==='object'?JSON.stringify(value,null,2):String(value===''?'—':value));control.className='process-readonly';
+   }else if(['boolean','person'].includes(field.type)){
+    control=element('select');const options=field.type==='boolean'?[['','선택'],['true','예'],['false','아니오']]:[['','사용자 선택']];for(const [key,text] of options){const option=element('option',text);option.value=key;control.append(option);}control.value=value===''?'':String(value);
+   }else if(['textarea','json','entityset'].includes(field.type)){
+    control=element('textarea');control.value=typeof value==='object'?JSON.stringify(value,null,2):String(value);control.maxLength=field.max_length||(['json','entityset'].includes(field.type)?65535:16384);
+   }else{
+    control=element('input');control.type=['number','integer'].includes(field.type)?'number':['date','time','month','email','url'].includes(field.type)?field.type:'text';control.value=String(value);control.maxLength=field.max_length||2000;
+    if(control.type==='number')control.step=field.type==='integer'?'1':'any';if(field.type==='decimal')control.inputMode='decimal';
+   }
+   if(control.matches('input,select,textarea')){control.required=!!field.required;control.dataset.previewField=field.key;if(field.default_function)control.placeholder='등록 시 자동으로 설정됩니다.';}
+   label.append(control);if(field.description)label.append(element('small',field.description));grid.append(label);
+  }
+  section.append(grid);panels.push(section);previewContent.append(section);
+ }
+ if(!groups.length)previewContent.append(element('p','필드를 추가하면 화면을 미리 볼 수 있습니다.'));
+ if(tabs.length)activate(0);preview.showModal();
+}
+query('[data-designer-preview]').addEventListener('click',openPreview);
+preview.querySelector('[data-preview-close]').addEventListener('click',()=>preview.close());
+for(const mobile of [false,true])preview.querySelector(mobile?'[data-preview-mobile]':'[data-preview-desktop]').addEventListener('click',()=>{previewContent.classList.toggle('preview-mobile',mobile);preview.querySelector('[data-preview-mobile]').setAttribute('aria-pressed',String(mobile));preview.querySelector('[data-preview-desktop]').setAttribute('aria-pressed',String(!mobile));});
 query('[data-designer-mobile]').addEventListener('click',e=>{const mobile=canvas.classList.toggle('mobile-preview');e.target.setAttribute('aria-pressed',String(mobile));});
 query('[data-designer-undo]').addEventListener('click',()=>{if(undo.length){redo.push(clone(state));state=undo.pop();render();}});query('[data-designer-redo]').addEventListener('click',()=>{if(redo.length){undo.push(clone(state));state=redo.pop();render();}});
 query('[data-designer-cancel]').addEventListener('click',()=>dialog.close());query('[data-designer-apply]').addEventListener('click',()=>{bridge.apply(clone(state));const note=document.querySelector('[data-designer-applied]');note.textContent='디자이너 배치를 반영했습니다. 초안 저장·검증으로 저장하십시오.';note.hidden=false;dialog.close();});
