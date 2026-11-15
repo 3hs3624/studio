@@ -33,9 +33,5 @@ def date_value(value):
     return value
 
 
-FIELD_TYPES = MappingProxyType({
-    'text': ('짧은 글', string_value), 'textarea': ('긴 글', string_value),
-    'integer': ('정수', integer_value), 'boolean': ('예 · 아니오', boolean_value),
-    'date': ('날짜', date_value), 'choice': ('선택', string_value),
-    'reference': ('엔티티 참조', string_value),
-})
+from ..data_types import TYPE_META,scalar
+FIELD_TYPES = MappingProxyType({key:(value[0],lambda v,k=key:scalar({'type':k},v)) for key,value in TYPE_META.items()})

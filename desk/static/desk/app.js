@@ -21,7 +21,7 @@ document.querySelectorAll('.api-form').forEach(form => {
       if(inputs.has('decision'))payload.decision=inputs.get('decision');
       if(kind==='flow-reassign')payload.person_ids=inputs.getAll('person_ids');
       if(['flow-start','flow-act','flow-resolve_outputs'].includes(kind)){
-        payload.values={};form.querySelectorAll('[data-process-input]').forEach(input=>{if(input.value==='')return;payload.values[input.dataset.processInput]=input.dataset.processType==='number'?Number(input.value):input.dataset.processType==='boolean'?input.value==='true':input.value;});
+        payload.values={};try{form.querySelectorAll('[data-process-input]').forEach(input=>{if(input.value==='')return;const type=input.dataset.processType;payload.values[input.dataset.processInput]=['number','integer'].includes(type)?Number(input.value):type==='boolean'?input.value==='true':['json','entityset'].includes(type)?JSON.parse(input.value):input.value;});}catch(error){const box=form.querySelector('.form-error');box.textContent='JSON 입력 형식을 확인하십시오.';box.hidden=false;return;}
         if(kind==='flow-start')payload.title=inputs.get('title');
       }
     } else if (kind?.startsWith('org-')) {
@@ -55,26 +55,32 @@ document.querySelectorAll('.api-form').forEach(form => {
       });
     } else if (kind === 'entity-save') {
       Object.assign(payload, {code:inputs.get('code'), name:inputs.get('name'), reason:inputs.get('reason'), fields:[]});
-      form.querySelectorAll('[data-entity-field-row]').forEach(row=>{
+      let invalidDefault=false;form.querySelectorAll('[data-entity-field-row]').forEach(row=>{
         const value=key=>row.querySelector('[data-field="'+key+'"]').value;
         const field={key:value('key'),label:value('label'),type:value('type'),required:row.querySelector('[data-field="required"]').checked};
-        if(field.type==='choice'){if(value('code_group_id'))field.code_group_id=value('code_group_id');else field.options=value('options').split(',').map(v=>v.trim()).filter(Boolean);}
+        if(['choice','code'].includes(field.type)){if(value('code_group_id'))field.code_group_id=value('code_group_id');else field.options=value('options').split(',').map(v=>v.trim()).filter(Boolean);}
         if(field.type==='reference'){field.target_entity_id=value('target_entity_id');field.relationship=value('relationship');}
+        for(const name of ['max_length','precision','scale']){const node=row.querySelector('[data-field="'+name+'"]');if(node&&!node.disabled&&node.value!=='')field[name]=Number(node.value);}
+        const description=row.querySelector('[data-field=description]');if(description?.value)field.description=description.value;
+        if(value('default')!==''){try{field.default=JSON.parse(value('default'));}catch(error){invalidDefault=true;}}if(value('default_function'))field.default_function=value('default_function');
         payload.fields.push(field);
       });
+      if(invalidDefault){const box=form.querySelector('.form-error');box.textContent='기본값은 JSON 표기로 입력하십시오.';box.hidden=false;return;}
       payload.junction=inputs.has('junction_enabled')?{left_field:inputs.get('junction_left'),right_field:inputs.get('junction_right')}:{};
     } else if (kind === 'entity-publish') {
       payload.reason=inputs.get('reason');
     } else if (kind === 'entity-record') {
       payload.schema_version_id=form.dataset.schema;
-      payload.values={};
+      payload.values={};let invalidValue=false;
       form.querySelectorAll('[data-entity-value]').forEach(input=>{
         let value=input.multiple?Array.from(input.selectedOptions).map(option=>option.value).filter(Boolean):input.value;
         if(value==='' || (Array.isArray(value) && !value.length))return;
-        if(input.dataset.type==='integer')value=Number(value);
+        if(['integer','number'].includes(input.dataset.type))value=Number(value);
+        if(['json','entityset'].includes(input.dataset.type)){try{value=JSON.parse(value);}catch(error){input.setCustomValidity('올바른 JSON을 입력하십시오.');input.reportValidity();invalidValue=true;return;}input.setCustomValidity('');}
         if(input.dataset.type==='boolean')value=value==='true';
         payload.values[input.dataset.key]=value;
       });
+      if(invalidValue)return;
     } else if (kind === 'plugin-configure') {
       const configuration={};
       form.querySelectorAll('[data-plugin-setting]').forEach(input=>{
@@ -336,12 +342,17 @@ if (entityFields) {
     control('label').value=field.label || '';
     control('type').value=field.type || 'text';
     control('required').checked=field.required === true;
+    for(const name of ['max_length','precision','scale'])control(name).value=field[name]??'';
+    control('default').value=field.default===undefined?'':JSON.stringify(field.default);control('default_function').value=field.default_function||'';
+    control('description').value=field.description||'';
     control('options').value=(field.options || []).join(', ');
     control('code_group_id').value=field.code_group_id || '';
     control('target_entity_id').value=field.target_entity_id || '';
     control('relationship').value=field.relationship || 'many_to_one';
     function updateType(){
-      control('code_group_id').disabled=control('type').value!=='choice';
+      control('max_length').disabled=!['text','textarea','email','phone','url'].includes(control('type').value);
+      for(const name of ['precision','scale'])control(name).disabled=control('type').value!=='decimal';
+      control('code_group_id').disabled=!['choice','code'].includes(control('type').value);
       control('options').disabled=control('type').value!=='choice' || !!control('code_group_id').value;
       row.querySelectorAll('[data-reference-settings]').forEach(input=>{input.disabled=control('type').value!=='reference';});
     }
@@ -441,3 +452,6 @@ document.querySelectorAll('[data-copy-load]').forEach(button=>button.addEventLis
  button.disabled=true;error.textContent='';
  try{const response=await fetch('/api/v1/organization-access/copy?'+new URLSearchParams({kind,id}),{credentials:'same-origin'});const result=await response.json();if(!response.ok)throw Error(result.error?.message||'조회 실패');form.querySelector('[name=allocation_token]').value=result.token;for(const [items,selector,name,key] of [[result.roles,'[data-copy-roles]','copy_roles','key'],[result.groups,'[data-copy-groups]','copy_groups','id']]){const output=form.querySelector(selector);if(!items.length)output.textContent='복제 가능한 항목이 없습니다.';for(const item of items){const label=document.createElement('label'),checkbox=document.createElement('input');label.className='check';checkbox.type='checkbox';checkbox.name=name;checkbox.value=item[key];checkbox.checked=true;label.append(checkbox,document.createTextNode(item.name+' · '+item.paths.join(' / ')));output.append(label);}}}catch(reason){error.textContent=reason.message;}finally{button.disabled=false;}
 }));
+
+// Clear JSON parse errors when the user corrects the input.
+document.querySelectorAll('[data-entity-value]').forEach(input=>input.addEventListener('input',()=>input.setCustomValidity('')));

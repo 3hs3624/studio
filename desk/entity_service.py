@@ -28,7 +28,7 @@ def validate_fields(actor, fields):
     for field in fields:
         if not isinstance(field, dict):
             s.fail('INVALID_ENTITY_SCHEMA', '필드 정의는 객체여야 합니다.')
-        s.check_fields(field, ['key','label','type','required','options','target_entity_id','relationship','code_group_id'],
+        s.check_fields(field, ['key','label','type','required','options','target_entity_id','relationship','code_group_id','max_length','precision','scale','description','default','default_function'],
                        ['key','label','type','required'])
         key, kind = field['key'], field['type']
         if not isinstance(key, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,39}', key) or key in seen or key in RESERVED_KEYS:
@@ -36,14 +36,18 @@ def validate_fields(actor, fields):
         if not isinstance(kind, str) or kind not in FIELD_TYPES or type(field['required']) is not bool:
             s.fail('INVALID_ENTITY_SCHEMA', '지원 필드 종류와 필수 여부를 확인하십시오.')
         value = dict(key=key, label=s.text(field, 'label', 100), type=kind, required=field['required'])
-        if kind != 'choice' and 'code_group_id' in field:
+        from .data_types import metadata
+        value.update(metadata(field))
+        if kind not in ('choice','code') and 'code_group_id' in field:
             s.fail('INVALID_ENTITY_SCHEMA', '공통코드는 선택형 필드에서 연결하십시오.')
-        if kind == 'choice' and 'code_group_id' in field:
+        if kind in ('choice','code') and 'code_group_id' in field:
             from .common_codes import group
             selected = group(actor, field['code_group_id'])
             if 'options' in field:
                 s.fail('INVALID_ENTITY_SCHEMA', '공통코드와 직접 선택지를 동시에 지정할 수 없습니다.')
             value['code_group_id'] = str(selected.id)
+        elif kind == 'code':
+            s.fail('INVALID_ENTITY_SCHEMA','공통코드 그룹을 선택하십시오.')
         elif kind == 'choice':
             options = field.get('options')
             if (not isinstance(options, list) or not 1 <= len(options) <= 30 or
@@ -155,7 +159,8 @@ def validate_values(actor, schema, values):
     cleaned = {}
     for field in schema.fields:
         key = field['key']
-        value = values.get(key)
+        from .data_types import default_value
+        value = values[key] if key in values else default_value(field)
         if value is None or value == '' or (value == [] and field['type'] == 'reference' and multiple(field)):
             if field['required']:
                 s.fail('INVALID_ENTITY_VALUE', f"{field['label']}: 필수 입력입니다.")
@@ -164,10 +169,17 @@ def validate_values(actor, schema, values):
         if kind == 'reference':
             cleaned[key] = validate_reference(actor, schema, field, value)
             continue
-        value = FIELD_TYPES[kind][1](value)
+        if kind=='person':
+            from .models import Person
+            ident=s.identifier(value)
+            if not Person.objects.filter(organization=actor.organization,id=ident,active=True,user__is_active=True).exists():s.fail('INVALID_ENTITY_VALUE','현재 조직의 활성 사용자를 선택하십시오.')
+            value=str(ident)
+        else:
+            from .data_types import scalar
+            value=scalar(field,value)
         if field['required'] and isinstance(value, str) and not value.strip():
             s.fail('INVALID_ENTITY_VALUE', f"{field['label']}: 공백만 입력할 수 없습니다.")
-        if kind == 'choice':
+        if kind in ('choice','code'):
             if 'code_group_id' in field:
                 from .models import CommonCodeItem
                 allowed = CommonCodeItem.objects.filter(organization=actor.organization,
