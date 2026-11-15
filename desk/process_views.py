@@ -33,6 +33,11 @@ def manage(request,kind='WORKFLOW',id=None):
           process_reviews=ProcessReview.objects.filter(definition=value).select_related('reviewer').order_by('-created_at')[:20] if value else [],
           binding=ProcessBinding.objects.filter(organization=actor.organization,menu_key='service-request').select_related('version__definition').first(),
           process_runs=ProcessRun.objects.filter(organization=actor.organization,version__definition=value).order_by('-created_at')[:100] if value else ProcessRun.objects.filter(organization=actor.organization).order_by('-created_at')[:100])
+        from .data_types import catalogue,SCREEN_TYPES
+        if value:
+            from .configuration_impact import process_impact
+            c['configuration_impact']=process_impact(value)
+        c['process_field_types']=[item for item in catalogue() if item['key'] in SCREEN_TYPES]
         return render(request,'desk/process-manage.html',c)
     except s.BusinessError as exc:return HttpResponse(exc.message,status=exc.status)
 

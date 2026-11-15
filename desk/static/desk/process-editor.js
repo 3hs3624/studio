@@ -2,6 +2,7 @@
 (()=>{
 const form=document.getElementById('process-editor');if(!form)return;
 const read=id=>JSON.parse(document.getElementById(id).textContent),draft=read('process-draft'),targets=read('process-targets'),screens=read('process-screens'),approvals=read('process-approvals'),workflows=read('process-workflows'),apis=read('process-apis'),kind=form.dataset.processKind;
+const fieldTypes=read('process-field-types');
 const positions={...(draft.positions||{})};let sequence=0,screenLayout=draft.layout||null;
 const el=(tag,text)=>{const item=document.createElement(tag);if(text!==undefined)item.textContent=text;return item;};
 const input=(value='',type='text')=>{const item=el('input');item.type=type;item.value=value??'';if(type==='text')item.maxLength=2000;return item;};
@@ -10,9 +11,9 @@ const label=(name,item)=>{const box=el('label',name);box.append(item);return box
 const checkbox=checked=>{const item=input('','checkbox');item.checked=!!checked;return item;};
 const setData=(node,name,value)=>{node.dataset[name]=value;return node;};
 const fieldBody=form.querySelector('[data-process-fields]'),nodeBody=form.querySelector('[data-process-nodes]');
-function fields(){return fieldBody?Array.from(fieldBody.children).map(row=>({key:row.querySelector('[data-p=key]').value,label:row.querySelector('[data-p=label]').value,type:row.querySelector('[data-p=type]').value,required:row.querySelector('[data-p=required]').checked,...(row.querySelector('[data-p=group_id]').value?{group_id:row.querySelector('[data-p=group_id]').value}:{})})):[];}
+function fields(){return fieldBody?Array.from(fieldBody.children).map(row=>{const type=row.querySelector('[data-p=type]').value,extra=JSON.parse(row.dataset.fieldMetadata||'{}');if(!['text','textarea','email','phone','url'].includes(type))delete extra.max_length;if(type!=='decimal'){delete extra.precision;delete extra.scale;}if(['person','reference','choice','code'].includes(type))delete extra.default;if(!({datetime:'CURRENT_TIMESTAMP',date:'CURRENT_DATE',uuid:'UUID'}[type]===extra.default_function))delete extra.default_function;return {...extra,key:row.querySelector('[data-p=key]').value,label:row.querySelector('[data-p=label]').value,type,required:row.querySelector('[data-p=required]').checked,...(type==='person'&&row.querySelector('[data-p=group_id]').value?{group_id:row.querySelector('[data-p=group_id]').value}:{})};}):[];}
 function addField(field={key:'field_'+(++sequence),label:'새 항목',type:'text',required:false}){
- const row=el('tr');for(const [key,node] of [['key',input(field.key)],['label',input(field.label)],['type',select([{id:'text',name:'문자'},{id:'number',name:'숫자'},{id:'boolean',name:'예·아니오'},{id:'person',name:'담당자'}],field.type)],['required',checkbox(field.required)],['group_id',select([{id:'',name:'전체 조직'},...(targets.GROUP||[])],field.group_id||'')]]){const cell=el('td');cell.append(setData(node,'p',key));row.append(cell);}
+ const row=el('tr');row.dataset.fieldMetadata=JSON.stringify(Object.fromEntries(['max_length','precision','scale','description','default','default_function'].filter(k=>field[k]!==undefined).map(k=>[k,field[k]])));for(const [key,node] of [['key',input(field.key)],['label',input(field.label)],['type',select(fieldTypes.map(t=>({id:t.key,name:t.label})),field.type)],['required',checkbox(field.required)],['group_id',select([{id:'',name:'전체 조직'},...(targets.GROUP||[])],field.group_id||'')]]){const cell=el('td');cell.append(setData(node,'p',key));row.append(cell);}
  if(kind==='SCREEN'){const cell=el('td');cell.append(setData(checkbox((draft.read_only||[]).includes(field.key)),'p','readonly'));row.append(cell);}
  const cell=el('td'),remove=el('button','제거');remove.type='button';remove.className='secondary';remove.addEventListener('click',()=>row.remove());cell.append(remove);row.append(cell);fieldBody.append(row);
 }

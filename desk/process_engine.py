@@ -81,15 +81,17 @@ def recipients(actor,spec,run=None):
     return result
 
 
+from .data_types import SCREEN_TYPES, metadata as type_metadata, scalar as type_scalar
+
 def fields_validate(fields,actor=None):
     if not isinstance(fields,list) or len(fields)>30:s.fail('INVALID_FIELDS','입력 항목은 최대 30개입니다.')
     result=[];keys=set()
     for field in fields:
         if not isinstance(field,dict):s.fail('INVALID_FIELDS','입력 항목을 확인하십시오.')
-        s.check_fields(field,['key','label','type','required','group_id'],['key','label','type','required'])
+        s.check_fields(field,['key','label','type','required','group_id','max_length','precision','scale','description','default','default_function'],['key','label','type','required'])
         key=s.text(field,'key',40)
-        if not re.fullmatch(r'[a-z][a-z0-9_]{0,39}',key) or key in keys or field['type'] not in ('text','number','boolean','person') or type(field['required']) is not bool:s.fail('INVALID_FIELDS','항목 식별자·종류·필수 여부를 확인하십시오.')
-        item=dict(key=key,label=s.text(field,'label',100),type=field['type'],required=field['required'])
+        if not re.fullmatch(r'[a-z][a-z0-9_]{0,39}',key) or key in keys or not isinstance(field['type'],str) or field['type'] not in SCREEN_TYPES or type(field['required']) is not bool:s.fail('INVALID_FIELDS','항목 식별자·종류·필수 여부를 확인하십시오.')
+        item=dict(key=key,label=s.text(field,'label',100),type=field['type'],required=field['required']);item.update(type_metadata(field))
         if field.get('group_id'):
             if field['type']!='person' or not actor or not Group.objects.filter(organization=actor.organization,id=s.identifier(field['group_id']),active=True).exists():s.fail('INVALID_PERSON_GROUP','담당자 선택 범위는 현재 조직의 활성 그룹이어야 합니다.')
             item['group_id']=str(field['group_id'])
@@ -97,11 +99,14 @@ def fields_validate(fields,actor=None):
     return result
 
 
-def values_validate(fields,values,required=True,actor=None):
+def values_validate(fields,values,required=True,actor=None,apply_defaults=False):
     if not isinstance(values,dict) or set(values)-{f['key'] for f in fields}:s.fail('INVALID_VALUES','허용된 입력 항목만 전달하십시오.')
     result={}
     for field in fields:
         key=field['key']
+        if apply_defaults and key not in values and ('default' in field or 'default_function' in field):
+            from .data_types import default_value
+            values={**values,key:default_value(field)}
         if key not in values:
             if required and field['required']:s.fail('REQUIRED_FIELD',field['label']+' 항목을 입력하십시오.')
             continue
@@ -111,9 +116,8 @@ def values_validate(fields,values,required=True,actor=None):
             except (ValueError,TypeError,AttributeError):person=None
             if not person or field.get('group_id') and field['group_id'] not in effective_groups(person):s.fail('INVALID_ASSIGNEE','선택 범위의 활성 담당자를 지정하십시오.')
             result[key]=str(person.id);continue
-        valid=(isinstance(value,str) and len(value)<=2000) if field['type']=='text' else (type(value) in (int,float) and abs(value)<=10**15) if field['type']=='number' else type(value) is bool
-        if not valid or (required and field['required'] and isinstance(value,str) and not value.strip()):s.fail('INVALID_VALUES',field['label']+' 값을 확인하십시오.')
-        result[key]=value
+        if required and field['required'] and isinstance(value,str) and not value.strip():s.fail('INVALID_VALUES',field['label']+' 값을 확인하십시오.')
+        result[key]=type_scalar(dict(field,**({'max_length':2000} if field['type']=='text' and 'max_length' not in field else {})),value)
     return result
 
 
@@ -227,7 +231,7 @@ def validate(actor,kind,raw):
                 count=value.get('count',1)
                 if type(count) is not int or not 1<=count<=20:s.fail('INVALID_CHILD_COUNT','하위 실행 수는 1~20개입니다.')
                 count_field=value.get('count_field','')
-                if count_field and not any(f['key']==count_field and f['type']=='number' for f in fields):s.fail('INVALID_CHILD_COUNT','선언된 숫자 항목으로 실행 수를 지정하십시오.')
+                if count_field and not any(f['key']==count_field and f['type'] in ('number','integer') for f in fields):s.fail('INVALID_CHILD_COUNT','선언된 숫자 항목으로 실행 수를 지정하십시오.')
                 if type_=='TRANSFER' and (count!=1 or count_field):s.fail('INVALID_TRANSFER','이관 대상은 한 건입니다.')
                 node.update(count=count,count_field=count_field)
                 for mapping_key in ('input_mapping','output_mapping'):
@@ -337,9 +341,18 @@ def compile_graph(actor,version_,depth=0):
 
 def event(actor,run,action,key='',details=None):ProcessEvent.objects.create(organization=actor.organization,run=run,actor=actor,action=action,node_key=key,details=details or {})
 
-def condition_match(data,spec):
+def condition_match(data,spec,fields=None):
     value=data.get(spec['field']);target=spec.get('value');op=spec['op']
     if op=='empty':return value is None or value==''
+    if any(f['key']==spec['field'] and f['type']=='decimal' for f in (fields or [])):
+        from decimal import Decimal,InvalidOperation
+        try:
+            value=Decimal(value) if value is not None else None
+            target=[Decimal(v) for v in target] if op=='in' else Decimal(target)
+            if value is None or not value.is_finite() or (any(not v.is_finite() for v in target) if op=='in' else not target.is_finite()):return False
+            if op=='in':return value in target
+            return {'eq':lambda:value==target,'ne':lambda:value!=target,'gt':lambda:value>target,'gte':lambda:value>=target,'lt':lambda:value<target,'lte':lambda:value<=target}[op]()
+        except (InvalidOperation,ValueError,TypeError):return False
     if op=='eq':return type(value) is type(target) and value==target
     if op=='ne':return type(value) is not type(target) or value!=target
     if op=='in':return value in target
@@ -375,7 +388,7 @@ def advance(actor,run,tokens,notify=True):
             for person_id in people:ProcessAssignment.objects.create(organization=actor.organization,task=created,person_id=person_id)
         elif kind=='END':
             if frames:s.fail('OPEN_FORK','병렬 경로가 합류 전에 종료되었습니다.',409)
-        elif kind=='CONDITION':tokens.append((node['true'] if condition_match(run.data,node['condition']) else node['false'],frames))
+        elif kind=='CONDITION':tokens.append((node['true'] if condition_match(run.data,node['condition'],run.graph.get('fields',[])) else node['false'],frames))
         elif kind=='PARALLEL':
             fork=str(uuid.uuid4())
             for index,target in enumerate(node['branches']):tokens.append((target,frames+[dict(id=fork,branch=index,count=len(node['branches']),join=node['join'])]))
@@ -558,7 +571,7 @@ def spawn_children(actor,run,task,node,count=None):
     if ProcessRun.objects.filter(root_run=root).count()+count>200:s.fail('CHILD_RUN_LIMIT','한 실행의 하위 실행은 최대 200건입니다.')
     ref=version(actor,node['version_id'],'WORKFLOW')
     mapping=node.get('input_mapping',{});child_values={field['key']:run.data[mapping.get(field['key'],field['key'])] for field in node['child_graph'].get('fields',[]) if mapping.get(field['key'],field['key']) in run.data}
-    values=values_validate(node['child_graph'].get('fields',[]),child_values,actor=actor)
+    values=values_validate(node['child_graph'].get('fields',[]),child_values,actor=actor,apply_defaults=True)
     children=[ProcessRun.objects.create(organization=actor.organization,version=ref,started_by=run.started_by,title=(run.title+' / '+node['label']+' '+str(index+1))[:300],data=dict(values),graph=node['child_graph'],parent_task=task,root_run=root) for index in range(count)]
     task.child_ids=[str(child.id) for child in children];task.save(update_fields=['child_ids'])
     event(actor,run,'CHILDREN_STARTED',task.node_key,{'child_run_ids':task.child_ids,'version':str(ref.id)})
@@ -632,7 +645,7 @@ def effective_child(run,seen=None):
 def start_run(actor,value,title,values,ticket=None):
     if value.graph.get('catalog_only') and not ticket:s.fail('CATALOG_REQUIRED','이 프로세스는 서비스 카탈로그에서 신청하십시오.')
     graph=compile_graph(actor,value)
-    run=ProcessRun.objects.create(organization=actor.organization,version=value,started_by=actor,title=title,data=values_validate(graph.get('fields',[]),values,actor=actor),graph=graph,ticket=ticket)
+    run=ProcessRun.objects.create(organization=actor.organization,version=value,started_by=actor,title=title,data=values_validate(graph.get('fields',[]),values,actor=actor,apply_defaults=True),graph=graph,ticket=ticket)
     event(actor,run,'STARTED',details={'version':str(value.id),'digest':value.digest});advance(actor,run,[(graph['start'],[])])
     return run
 
@@ -654,6 +667,7 @@ def task_fields(actor,run,node,task,editing=False):
             people=Person.objects.filter(organization=actor.organization,active=True,user__is_active=True).select_related('profile')
             item['options']=[dict(id=str(p.id),name=p.display_name+' · '+p.user.username) for p in people if not field.get('group_id') or field['group_id'] in effective_groups(p)]
             item['display_value']=next((p['name'] for p in item['options'] if p['id']==item['value']),'—')
+        if field['type'] in ('json','entityset'):item['display_json']=json.dumps(item['value'],ensure_ascii=False) if item['value']!='' else ''
         result.append(item)
     return result
 

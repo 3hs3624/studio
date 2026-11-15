@@ -415,7 +415,7 @@ def entity_management(request, id=None):
         if schema:
             for field in schema.fields:
                 item = dict(field)
-                if field['type']=='choice':
+                if field['type'] in ('choice','code'):
                     if field.get('code_group_id'):
                         from .models import CommonCodeItem
                         item['choice_options'] = [dict(value=code.code,label=code.label) for code in CommonCodeItem.objects.filter(organization=actor.organization,group_id=field['code_group_id'],group__active=True,active=True)]
@@ -470,6 +470,9 @@ def entity_management(request, id=None):
                  field_types=[{'key':key,'label':value[0]} for key,value in FIELD_TYPES.items()],
                  entity_list=EntityDefinition.objects.filter(organization=actor.organization).order_by('code')[:100],
                  history=entity.schema_versions.order_by('-version')[:20] if entity else [])
+        if entity:
+            from .configuration_impact import entity_impact
+            c['configuration_impact']=entity_impact(entity)
         return render(request, 'desk/entities.html', c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message, status=exc.status)
