@@ -3,7 +3,9 @@ from .models import ProcessVersion,ProcessRun,EntityRecord,EntitySchemaVersion
 
 
 def field_changes(before,after):
-    old={f['key']:f for f in before};new={f['key']:f for f in after};result=[]
+    def entries(value):
+        return {f['key']:f for f in value if isinstance(f,dict) and isinstance(f.get('key'),str) and 'type' in f} if isinstance(value,list) else {}
+    old=entries(before);new=entries(after);result=[]
     for key in sorted(old.keys()|new.keys()):
         if key not in old:result.append(dict(key=key,kind='추가',risk='확인',detail='필수 항목이면 기존 데이터의 기본값·이관을 확인하십시오.' if new[key].get('required') else '신규 버전부터 적용됩니다.'))
         elif key not in new:result.append(dict(key=key,kind='제거',risk='주의',detail='기존 게시 버전과 데이터는 보존됩니다. 참조 규칙·매핑을 확인하십시오.'))

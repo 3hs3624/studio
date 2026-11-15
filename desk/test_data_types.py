@@ -64,3 +64,8 @@ class DataTypeTests(SimpleTestCase):
         self.assertEqual(changes['name']['risk'],'주의')
         self.assertEqual(changes['old']['kind'],'제거')
         self.assertEqual(changes['new']['kind'],'추가')
+
+    def test_invalid_saved_draft_does_not_break_impact_page(self):
+        from .configuration_impact import field_changes
+        self.assertEqual(field_changes([],None),[])
+        self.assertEqual(field_changes([],['bad',None,{}]),[])
