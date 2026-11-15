@@ -198,3 +198,10 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 .process-back-link{display:inline-block;margin-bottom:16px}.process-definition-list{padding:24px}.process-definition-list>.process-list-filter{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:0;max-width:none}.process-list-filter>label{margin:0;min-width:180px}.process-list-filter>label:first-child{flex:1}.process-list-filter input,.process-list-filter select{margin-bottom:0}.process-list-count{margin:20px 0 12px}.process-list-pages{display:flex;gap:24px;justify-content:center;align-items:center;padding:20px 0}.process-create-panel{padding:24px}.process-create-panel>.api-form{margin:0;max-width:none}.process-create-panel small{color:#525252;margin-top:6px}.process-create-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:24px}.process-detail-workspace{overflow:visible}
 @media(max-width:700px){.process-definition-list,.process-create-panel{padding:16px}.process-list-filter>label{width:100%;min-width:0}}
 .process-definition-list td>a{color:#0f62fe}.process-definition-list td>a:hover{text-decoration:underline}
+
+/* Error messages must not stretch neighboring grid form buttons. */
+.console-tab-body .api-form>button{align-self:start;height:auto}
+.process-release-actions{align-items:start}
+.console-tab-body .process-release-actions>.api-form{display:flex;flex-direction:column;align-items:flex-start;gap:16px}
+.process-release-actions>.api-form>label{width:100%}.process-release-actions .form-error{width:100%;box-sizing:border-box;margin:0}.console-tab-body .process-release-actions>.api-form>button{flex:none;width:auto;align-self:flex-start;margin:0;min-height:36px}
+@media(max-width:700px){.console-tab-body .process-release-actions>.api-form>button{min-height:40px}}
