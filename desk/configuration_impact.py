@@ -16,6 +16,8 @@ def field_changes(before,after):
 
 
 def process_impact(definition):
+    if definition.validation_errors:
+        return dict(changes=[],references=[],active_runs=0)
     published=definition.published
     if not published:return dict(changes=[],references=[],active_runs=0)
     changes=field_changes(published.graph.get('fields',[]),definition.draft.get('fields',[]))

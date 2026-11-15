@@ -69,3 +69,8 @@ class DataTypeTests(SimpleTestCase):
         from .configuration_impact import field_changes
         self.assertEqual(field_changes([],None),[])
         self.assertEqual(field_changes([],['bad',None,{}]),[])
+
+    def test_invalid_draft_contract_is_not_used_by_impact_report(self):
+        from types import SimpleNamespace
+        from .configuration_impact import process_impact
+        self.assertEqual(process_impact(SimpleNamespace(validation_errors=['길이 오류'])),dict(changes=[],references=[],active_runs=0))
