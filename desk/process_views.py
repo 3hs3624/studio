@@ -13,17 +13,35 @@ from .models import IntegrationVersion
 def versions(actor,kind):return ProcessVersion.objects.filter(organization=actor.organization,definition__kind=kind,definition__active=True,processretirement__isnull=True).select_related('definition').order_by('definition__name','-version')
 
 @login_required
-def manage(request,kind='WORKFLOW',id=None):
+def manage(request,kind='WORKFLOW',id=None,new=False):
     try:
         c=context(request);actor=c['actor'];require(actor,'workflow.manage')
         value=engine.definition(actor,id) if id else None
         if value and value.kind!=kind:s.fail('NOT_FOUND','정의 유형이 다릅니다.',404)
         base={'WORKFLOW':'/console/workflows','APPROVAL':'/console/approval-lines','SCREEN':'/console/screens'}[kind]
+        c.update(process_kind=kind,process_base=base,process_title={'WORKFLOW':'워크플로우 관리','SCREEN':'화면 관리','APPROVAL':'결재선 관리'}[kind])
+        if not id:
+            if new or request.GET.get('new')=='1':
+                graph={'fields':[],'read_only':[],'columns':3} if kind=='SCREEN' else {'stages':[]} if kind=='APPROVAL' else {'start':'start','fields':[],'nodes':[{'key':'start','label':'시작','type':'START','next':'end'},{'key':'end','label':'종료','type':'END'}]}
+                c['initial_graph']=graph
+                return render(request,'desk/process-create.html',c)
+            query=ProcessDefinition.objects.filter(organization=actor.organization,kind=kind).select_related('published','draft_author__profile')
+            search=request.GET.get('q','').strip()[:100];state=request.GET.get('state','all')
+            if search:query=query.filter(Q(name__icontains=search)|Q(code__icontains=search))
+            if state in ('active','inactive'):query=query.filter(active=state=='active')
+            else:state='all'
+            from django.core.paginator import Paginator
+            page=Paginator(query.order_by('name','id'),25).get_page(request.GET.get('page'))
+            for definition in page.object_list:
+                definition.draft_status='검증 오류' if definition.validation_errors else '미게시 초안' if not definition.published else '게시본과 동일' if engine.digest(definition.draft)==definition.published.digest else '변경된 초안'
+            c.update(definition_page=page,search=search,state=state,list_query=request.GET.copy())
+            c['list_query'].pop('page',None);c['list_query']=c['list_query'].urlencode()
+            return render(request,'desk/process-list.html',c)
         tab=request.GET.get('tab','design')
         if tab not in ('design','versions','bindings','runs'):s.fail('NOT_FOUND','탭을 찾을 수 없습니다.',404)
         from .identity_views import tabs
         c.update(**tabs(base+'/'+str(id) if id else base,tab,[('design','설계·초안'),('versions','버전·검토·게시'),('bindings','업무 메뉴 연결'),('runs','실행 현황')]),
-            process_kind=kind,process_base=base,process_definition=value,process_definitions=ProcessDefinition.objects.filter(organization=actor.organization,kind=kind).order_by('name'),
+            process_kind=kind,process_base=base,process_definition=value,
             process_versions=value.versions.order_by('-version') if value else [],screen_versions=versions(actor,'SCREEN'),approval_versions=versions(actor,'APPROVAL'),workflow_versions=versions(actor,'WORKFLOW'))
         from .organization_views import catalog
         targets={'USER':[{'id':str(p.id),'name':p.display_name+' · '+p.user.username} for p in Person.objects.filter(organization=actor.organization,active=True,user__is_active=True).select_related('profile','user')],
