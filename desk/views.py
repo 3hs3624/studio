@@ -415,6 +415,10 @@ def entity_management(request, id=None):
         if schema:
             for field in schema.fields:
                 item = dict(field)
+                from .data_types import default_value
+                initial=default_value(field)
+                item['initial_value']=initial if initial is not None else ''
+                item['initial_display']=__import__('json').dumps(initial,ensure_ascii=False) if field['type'] in ('json','entityset') and initial is not None else item['initial_value']
                 if field['type'] in ('choice','code'):
                     if field.get('code_group_id'):
                         from .models import CommonCodeItem

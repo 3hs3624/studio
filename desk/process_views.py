@@ -54,7 +54,7 @@ def inbox(request,id=None):
                 task.participants=Person.objects.filter(organization=actor.organization,id__in=task.person_ids).select_related('profile')
                 task.children=ProcessRun.objects.filter(organization=actor.organization,id__in=task.child_ids).select_related('version__definition')
                 node=next(n for n in run.graph['nodes'] if n['key']==task.node_key)
-                task.output_fields=[{**field,'value':run.data.get(field['key'],''),'required':True,'read_only':False} for field in run.graph.get('fields',[]) if field['key'] in node.get('output_mapping',{})]
+                task.output_fields=[{**field,'value':run.data.get(field['key'],''),'display_json':__import__('json').dumps(run.data[field['key']],ensure_ascii=False) if field['type'] in ('json','entityset') and field['key'] in run.data else '', 'required':True,'read_only':False} for field in run.graph.get('fields',[]) if field['key'] in node.get('output_mapping',{})]
                 screen=node.get('screen') or run.graph.get('screen') or {}
                 task.screen_columns=screen.get('columns',2)
                 task.screen_layout_mode=screen.get('layout',{}).get('mode','sections')
@@ -75,6 +75,10 @@ def inbox(request,id=None):
             start=request.GET.get('start')
             if start:
                 value=engine.version(actor,start,'WORKFLOW',True)
-                c.update(start_version=value,start_graph=engine.compile_graph(actor,value))
+                graph=engine.compile_graph(actor,value)
+                from .data_types import default_value
+                import json
+                graph['fields']=[dict(f,value=default_value(f) if ('default' in f or 'default_function' in f) else '',display_json=json.dumps(default_value(f),ensure_ascii=False) if f['type'] in ('json','entityset') and 'default' in f else '') for f in graph.get('fields',[])]
+                c.update(start_version=value,start_graph=graph)
         return render(request,'desk/process-inbox.html',c)
     except s.BusinessError as exc:return HttpResponse(exc.message,status=exc.status)
