@@ -85,6 +85,8 @@ def home(request):
     c=context(request)
     from .delivery import overview
     c.update(overview(c['actor']))
+    from .dashboard_tasks import dashboard
+    c.update(dashboard(c['actor'],request))
     return render(request,'desk/portal.html',c)
 
 @login_required
@@ -321,6 +323,8 @@ def system_home(request,system):
     c=context(request);p=c['actor']
     c['system']=next(x for x in SYSTEMS if x['key']==system)
     if system=='service':
+        from .dashboard_tasks import dashboard
+        c.update(dashboard(p,request))
         incidents=s.ticket_query(p,c['can_work'])
         requests=request_query(p,'queue' if c['can_work'] else 'mine')
         c.update(metrics=[{'label':'진행 중 장애','value':incidents.exclude(status__in=['RESOLVED','CLOSED']).count(),'url':'/work/incidents' if c['can_work'] else '/portal/incidents'},
