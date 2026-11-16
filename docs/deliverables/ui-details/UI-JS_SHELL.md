@@ -19,9 +19,9 @@
 | UI-JS_SHELL-E003 · Escape 메뉴 닫기 | 키보드 / data-key=mobile.escape | 편집기 열림·해당 대상 선택 시 | 메뉴 열린 상태에서만 닫기 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
 | UI-JS_SHELL-E004 · 메뉴 포커스 순환 | Tab/Shift+Tab / data-key=mobile.focus | 편집기 열림·해당 대상 선택 시 | 열린 메뉴 링크 안에서 키보드 순환 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
 | UI-JS_SHELL-E005 · 모바일 너비 이탈 | 반응형 / data-key=mobile.breakpoint | 편집기 열림·해당 대상 선택 시 | 680px 초과로 전환 시 메뉴 닫기 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
-| UI-JS_SHELL-E006 · 데스크톱 사이드바 접기 | 미구현 / data-key=shell.desktop-collapse | 편집기 열림·해당 대상 선택 시 | 현재 데스크톱용 접기 조작 없음; 모바일 메뉴 토글과 구분 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
-| UI-JS_SHELL-E007 · 사이드바 폭 드래그 조절 | 미구현 / data-key=shell.width | 편집기 열림·해당 대상 선택 시 | 현재 사용자가 폭을 조절하는 핸들/저장 기능 없음. CSS 반응형 너비만 적용 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
-| UI-JS_SHELL-E008 · 사이드바 상태 저장 | 미구현 / data-key=shell.persist | 편집기 열림·해당 대상 선택 시 | 접힘·너비를 localStorage/서버에 저장하는 기능 없음 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
+| UI-JS_SHELL-E006 · 데스크톱 사이드바 접기 | 버튼 / data-sidebar-toggle | 로그인 후 681px 이상 | 상단 버튼으로 접기/펼치기. 접으면 메뉴 inert·숨김 및 본문 확장. aria-expanded 갱신. 브라우저에 상태 저장 | `desk/static/desk/sidebar.js` |
+| UI-JS_SHELL-E007 · 사이드바 폭 드래그 조절 | 드래그/키보드 / data-sidebar-resizer | 데스크톱에서 펼침 상태 | 220~min(480, 화면너비45%)px. 기본256px. 좌우10·Shift50px, Home/End, 두 번 클릭 초기화, Escape 드래그 취소 | `desk/static/desk/sidebar.js` |
+| UI-JS_SHELL-E008 · 사이드바 상태 저장 | 브라우저 설정 / studio.sidebar.v1 | 브라우저 저장소 허용 시 | width·collapsed만 localStorage에 저장. 새로고침/포털·콘솔/다른 탭 복원. 손상·차단 시 기본값/현재 동작 유지. 서버/다른 장치 동기화 없음 | `desk/static/desk/sidebar.js` |
 | UI-JS_SHELL-E009 · 장문 입력 높이 조절 | 드래그 / data-key=textarea.resize | 편집기 열림·해당 대상 선택 시 | textarea의 기본 세로 resize 허용; 데이터 자동 저장은 아님 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
 | UI-JS_SHELL-E010 · 넓은 표 가로 스크롤 | 스크롤 / data-key=table.scroll | 편집기 열림·해당 대상 선택 시 | table-wrap 내부에서 가로 이동; 화면 전체 너비 확장 방지 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
 | UI-JS_SHELL-E011 · 미저장 변경 경고 | 브라우저 이동 / data-key=form.unsaved | 편집기 열림·해당 대상 선택 시 | data-track-changes 폼 수정 후 이동 시 확인; 저장 성공 후 경고 해제 / 클라이언트 편집 상태 → 초안 저장 시 서버 검증 | `desk/static/desk/app.js / desk/static/desk/carbon-ui.css` |
@@ -45,3 +45,5 @@
 정상: 표시 조건에 맞는 계정/상태에서 위 항목이 보이고 입력·동작이 정의와 일치.
 예외: 필수/형식/참조/버전/권한 오류에서 저장되지 않고 안내.
 공통 컴포넌트는 포함하는 화면에서 같은 정의를 사용. 미구현 항목은 실제 조작으로 검수하지 않음.
+
+2026-11-17 구현 갱신. 조작·예외별 확장 정의는 [사이드바 상세](../../sidebar-navigation.md)를 참조합니다.

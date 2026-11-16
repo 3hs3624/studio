@@ -207,3 +207,18 @@ label{font-size:12px;font-weight:400;letter-spacing:0;color:#525252;margin:16px 
 @media(max-width:700px){.console-tab-body .process-release-actions>.api-form>button{min-height:40px}}
 
 .dashboard-todo-panel{margin:24px 0}.todo-scopes{display:flex;gap:4px;align-items:center}.todo-scopes a{display:inline-flex;justify-content:center;align-items:center;min-height:36px;min-width:56px;padding:6px 14px;border:1px solid #c6c6c6;background:white;color:#525252}.todo-scopes a[aria-current=true]{background:#0f62fe;border-color:#0f62fe;color:white}.todo-count{font-size:14px;font-weight:400;margin-left:8px;color:#525252}#dashboard-tasks>.todo-description{margin:0;padding:0 24px 16px;font-size:12px;color:#525252}.dashboard-todo-panel td>a{color:#0f62fe}.dashboard-todo-panel .panel-header{align-items:center;flex-wrap:wrap;gap:12px}.dashboard-todo-panel .panel-header h2{margin:0}.dashboard-todo-panel{scroll-margin-top:64px}@media(max-width:700px){.todo-scopes a{min-height:40px}#dashboard-tasks>.todo-description{padding:0 16px 16px}}
+
+/* Desktop navigation controls; mobile retains its independent overlay menu. */
+.sidebar-toggle,.sidebar-resizer{display:none}
+@media(min-width:681px){
+ .sidebar-toggle{display:grid;place-items:center;width:36px;min-width:36px;height:36px;min-height:36px;padding:0;border:1px solid #525252;background:transparent;color:#fff;font-size:20px}
+ .sidebar-toggle:hover{background:#393939}.sidebar-toggle:focus-visible{outline-color:#fff}
+ .sidebar,.console-mode .console-sidebar{width:var(--sidebar-preferred-width,256px)}
+ .shell,.console-mode .shell{margin-left:var(--sidebar-preferred-width,256px)}
+ .sidebar-resizer{display:block;position:fixed;left:calc(var(--sidebar-preferred-width,256px) - 4px);top:48px;bottom:0;width:8px;z-index:46;cursor:col-resize;touch-action:none;background:transparent}
+ .sidebar-resizer:hover,.sidebar-resizer:focus-visible{background:#0f62fe66;outline:2px solid #0f62fe;outline-offset:-2px}
+ .sidebar-collapsed .sidebar{transform:translateX(-100%);visibility:hidden;pointer-events:none}
+ .sidebar-collapsed .shell,.console-mode.sidebar-collapsed .shell{margin-left:0}
+ .sidebar-collapsed .sidebar-resizer{display:none}
+ .sidebar-resizing,.sidebar-resizing *{cursor:col-resize!important;user-select:none!important}
+}
