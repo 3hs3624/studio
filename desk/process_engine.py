@@ -88,7 +88,7 @@ def fields_validate(fields,actor=None):
     result=[];keys=set()
     for field in fields:
         if not isinstance(field,dict):s.fail('INVALID_FIELDS','입력 항목을 확인하십시오.')
-        s.check_fields(field,['key','label','type','required','group_id','max_length','precision','scale','description','default','default_function'],['key','label','type','required'])
+        s.check_fields(field,['key','label','type','required','group_id','max_length','precision','scale','minimum','maximum','description','default','default_function'],['key','label','type','required'])
         key=s.text(field,'key',40)
         if not re.fullmatch(r'[a-z][a-z0-9_]{0,39}',key) or key in keys or not isinstance(field['type'],str) or field['type'] not in SCREEN_TYPES or type(field['required']) is not bool:s.fail('INVALID_FIELDS','항목 식별자·종류·필수 여부를 확인하십시오.')
         item=dict(key=key,label=s.text(field,'label',100),type=field['type'],required=field['required']);item.update(type_metadata(field))

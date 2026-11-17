@@ -384,7 +384,7 @@ def submit(p,data,request_id):
             s.fail('INVALID_RESUBMISSION','본인의 반려·취소 요청에서 같은 서비스를 재신청하십시오.')
     values=validate_values(v.fields,data['values'])
     t=Ticket.objects.create(organization=p.organization,type='SERVICE_REQUEST',number='SR-'+uuid.uuid4().hex.upper(),
-            title=v.name,description=v.description,requested_by=p,group=v.fulfillment_group,
+            title=(values.get('title','').strip()[:300] if isinstance(values.get('title'),str) and values['title'].strip() else v.name),description=v.description,requested_by=p,group=v.fulfillment_group,
             status='PENDING_APPROVAL' if v.approval_required else 'APPROVED')
     snapshot=catalog_data(v,True)
     ServiceRequest.objects.create(organization=p.organization,ticket=t,catalog_version=v,values=values,snapshot=snapshot,resubmission_of=previous)
@@ -392,7 +392,7 @@ def submit(p,data,request_id):
         from .process_engine import version as process_version,start_run
         workflow=process_version(p,str(v.workflow_version_id),'WORKFLOW',True)
         keys={field['key'] for field in workflow.graph.get('fields',[])}
-        start_run(p,workflow,v.name,{key:val for key,val in values.items() if key in keys},ticket=t);t.refresh_from_db()
+        start_run(p,workflow,t.title,{key:val for key,val in values.items() if key in keys},ticket=t);t.refresh_from_db()
     if v.approval_required:
         RequestApproval.objects.create(organization=p.organization,ticket=t,approver=v.approver)
     s.history(p,t,'')

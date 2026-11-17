@@ -49,3 +49,9 @@ Google 기능명세서의 ‘화면·항목별 상세 정의’ 탭과 화면설
 python docs/deliverables/export_ui_details.py --tree /tmp/remote-tree.json \
   --commit 55affa25b682ab2b758b0c4bf5c935b9f237d575 --work-dir /tmp/studio-ui-details
 ```
+
+## 2026-11-18 서비스요청 실행 기반·매뉴얼
+
+기존 요청자/승인자/운영자 재사용, 개발자·디자이너 추가, 화면19필드/5그룹, 만족도1~5 검증과 자동 종료, 기준정보 및 신청 샘플5건을 준비했습니다. 초기 적재는 명시적 실행이며 기존 비밀번호·게시/진행 버전은 보존합니다.
+
+[운영자 매뉴얼](../manuals/operator-manual.md) · [사용자 매뉴얼](../manuals/user-manual.md) · [구성·적재 명세](../service-request-satisfaction.md). 비밀번호는 비공개 별도 접속정보로만 전달합니다.

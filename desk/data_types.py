@@ -31,6 +31,12 @@ def metadata(field):
         p=field.get('precision',18);scale=field.get('scale',2)
         if field['type']!='decimal' or type(p) is not int or type(scale) is not int or not 1<=p<=38 or not 0<=scale<=min(p,18):s.fail('INVALID_FIELD_OPTIONS','고정소수의 정밀도(1~38)와 소수 자리(0~18)를 확인하십시오.')
         result.update(precision=p,scale=scale)
+    for bound in ('minimum','maximum'):
+        if bound in field:
+            v=field[bound]
+            if field['type'] not in ('integer','number') or type(v) not in (int,float) or abs(v)>9007199254740991 or not math.isfinite(v) or (field['type']=='integer' and type(v) is not int):s.fail('INVALID_FIELD_OPTIONS','숫자 범위의 자료형을 확인하십시오.')
+            result[bound]=v
+    if result.get('minimum',-math.inf)>result.get('maximum',math.inf):s.fail('INVALID_FIELD_OPTIONS','최소값은 최대값 이하여야 합니다.')
     if 'default' in field and 'default_function' in field:s.fail('INVALID_FIELD_OPTIONS','기본값과 자동 기본값은 하나만 설정하십시오.')
     if 'default' in field:
         if field['type'] in ('person','reference','choice','code'):s.fail('INVALID_FIELD_OPTIONS','참조·선택 항목의 기본값은 연결 규칙으로 설정하십시오.')
@@ -53,6 +59,7 @@ def default_value(field):
 def scalar(field,value):
     kind=field['type'];label=field.get('label','값')
     def fail():s.fail('INVALID_ENTITY_VALUE',label+': 데이터타입·길이·범위를 확인하십시오.')
+    if kind in ('integer','number') and type(value) in (int,float) and not field.get('minimum',-math.inf)<=value<=field.get('maximum',math.inf):fail()
     if kind in ('json','entityset'):
         if not isinstance(value,(dict,list)) or kind=='entityset' and not isinstance(value,list):fail()
         try:

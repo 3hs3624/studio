@@ -28,7 +28,7 @@ def validate_fields(actor, fields):
     for field in fields:
         if not isinstance(field, dict):
             s.fail('INVALID_ENTITY_SCHEMA', '필드 정의는 객체여야 합니다.')
-        s.check_fields(field, ['key','label','type','required','options','target_entity_id','relationship','code_group_id','max_length','precision','scale','description','default','default_function'],
+        s.check_fields(field, ['key','label','type','required','options','target_entity_id','relationship','code_group_id','max_length','precision','scale','minimum','maximum','description','default','default_function'],
                        ['key','label','type','required'])
         key, kind = field['key'], field['type']
         if not isinstance(key, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,39}', key) or key in seen or key in RESERVED_KEYS:

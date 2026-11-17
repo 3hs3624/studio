@@ -238,6 +238,14 @@ def catalog_detail(request,id):
         values=previous.service_request.values if previous else {}
         fields=[{**f,'value':values.get(f['key'],'')} for f in v.fields]
         c.update(offering=catalog.catalog_data(v),form_fields=fields,resubmission_of=str(previous.id) if previous else '')
+        if v.workflow_version_id:
+            from .screen_layout import visible_groups
+            screen=v.workflow_version.graph.get('screen',{})
+            metadata={f['key']:f for f in screen.get('fields',[])}
+            fields=[{**metadata.get(f['key'],{}),**f} for f in fields]
+            c['form_fields']=fields
+            c['workflow_steps']=[n['label'] for n in v.workflow_version.graph.get('nodes',[]) if n['type'] in ('START','TASK','APPROVAL','END')]
+            c.update(catalog_screen_groups=visible_groups(screen,fields),catalog_layout_mode=screen.get('layout',{}).get('mode','sections'),catalog_columns=screen.get('columns',2))
         return render(request,'desk/catalog-detail.html',c)
     except s.BusinessError as exc:
         return HttpResponse(exc.message,status=exc.status)
