@@ -16,4 +16,8 @@ fi
 if [ -n "${STUDIO_SR_PROVISION_ORGANIZATION_ID:-}" ]; then
     python manage.py setup_service_request --organization-id "$STUDIO_SR_PROVISION_ORGANIZATION_ID"
 fi
+if [ "${STUDIO_SR_TEMPLATE:-0}" = '1' ]; then
+    # Idempotent; a failure leaves no partial configuration and must not stop the web service.
+    python manage.py setup_sr_template || echo 'SR template setup failed; existing service continues.' >&2
+fi
 exec python deploy/run_services.py
