@@ -17,6 +17,7 @@ if [ -n "${STUDIO_SR_PROVISION_ORGANIZATION_ID:-}" ]; then
     python manage.py setup_service_request --organization-id "$STUDIO_SR_PROVISION_ORGANIZATION_ID"
 fi
 if [ "${STUDIO_SR_DEMO_ENABLED:-0}" = '1' ]; then
-    python manage.py setup_service_request_demo --organization-id "$STUDIO_SR_PROVISION_ORGANIZATION_ID"
+    # Atomic and idempotent; a failure leaves no partial data and must not stop the web service.
+    python manage.py setup_service_request_demo --organization-id "$STUDIO_SR_PROVISION_ORGANIZATION_ID" || echo 'SR demo setup failed; existing service continues.' >&2
 fi
 exec python deploy/run_services.py
