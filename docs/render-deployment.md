@@ -46,3 +46,16 @@ Render 계정 로그인 후 생성할 웹/DB가 모두 Free인지 검토하고 �
 - https://render.com/docs/blueprint-spec
 - https://render.com/docs/deploy-to-render
 - https://render.com/docs/free
+
+
+## 서비스요청 초기 구성 적용(2026-11-18)
+
+main 배포 후 Render 웹 서비스 Environment에 아래 키를 **추가**하고(기존 키는 바꾸지 않음) Manual Deploy를 실행합니다. 시작 스크립트가 migrate 후 `setup_service_request_demo`를 실행합니다.
+
+| 키 | 값 |
+|---|---|
+| STUDIO_SR_DEMO_ENABLED | 1 |
+| STUDIO_SR_PROVISION_ORGANIZATION_ID | 운영 조직 UUID(기존 서비스요청 구성에 사용한 값) |
+| STUDIO_SR_DEMO_PASSWORDS_JSON | {"developer1":"<초기 비밀번호>","designer1":"<초기 비밀번호>"} — 새로 만드는 두 계정만 |
+
+로그의 `SR_DEMO {..."retained": false...}`로 적용을 확인합니다. 적용 후에는 SR_DEMO_20261118 마커로 재배포 시 다시 구성하지 않으므로 비밀번호 JSON 키는 지워도 됩니다. 실패하면 트랜잭션 전체가 취소되고 웹 서비스는 기존 구성으로 계속 기동되며, 로그에 `SR demo setup failed`와 오류 메시지가 남습니다. 키 값을 고친 뒤 다시 배포합니다. 상세는 [서비스요청 구성 명세](service-request-satisfaction.md)와 [운영자 매뉴얼](manuals/operator-manual.md) 21장을 참고합니다.

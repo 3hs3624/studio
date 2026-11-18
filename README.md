@@ -17,6 +17,7 @@ IBM Maximo IT가 다루는 업무 영역을 참고하여 IT 서비스·자산·�
 - [구매·계약·입고·재고](docs/purchasing-inventory.md)
 - [자산 등록·지급·반납·이력](docs/assets.md)
 - [카탈로그·서비스 요청·승인](docs/service-requests.md)
+- [서비스요청 표준 프로세스(개발 분기·만족도) 구성](docs/service-request-satisfaction.md) · [운영자·사용자 매뉴얼](docs/manuals/README.md): 역할별 사용자, 화면 템플릿, 워크플로우, 초기 기준값, 예시 요청 5건 (`setup_service_request_demo`)
 - [SLA·달력·알림 구현](docs/sla.md)
 - [기술 스택 결정](docs/adr/001-application-stack.md): Django 5.2 LTS, 서버 렌더링 UI, PostgreSQL 운영 기준·SQLite 로컬 개발
 
