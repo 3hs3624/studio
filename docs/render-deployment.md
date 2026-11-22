@@ -4,7 +4,7 @@
 
 ## 배포 시작
 
-[외부 임시 서버·DB 자동 구성 시작](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2F3hs3624%2Fstudio%2Ftree%2Ffeature%2Fincident-workflow)
+[외부 임시 서버·DB 자동 구성 시작](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2F3hs3624%2Fstudio%2Ftree%2Fmain)
 
 Render 계정 로그인 후 생성할 웹/DB가 모두 Free인지 검토하고 배포를 승인합니다. 별도 SSH 서버·도메인·수동 DB 연결값 입력은 필요하지 않습니다. 계정 로그인·리소스 생성 승인은 사용자 본인 계정에서 수행해야 하며, 현재 도구에 Render 계정/API 키가 연결되지 않아 이 단계는 대행할 수 없습니다. 구성 작성·로컬/CI 검증과 실제 Render 배포 성공은 별개입니다.
 

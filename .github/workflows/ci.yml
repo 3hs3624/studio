@@ -1,7 +1,7 @@
 name: Django checks
 on:
   push:
-    branches: [main, feature/incident-workflow]
+    branches: [main]
   pull_request:
 permissions:
   contents: read

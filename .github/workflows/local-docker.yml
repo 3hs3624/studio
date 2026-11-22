@@ -1,7 +1,7 @@
 name: Local AP DB Docker
 on:
   push:
-    branches: [main, feature/incident-workflow]
+    branches: [main]
     paths:
       - 'deploy/local_split/**'
       - '.dockerignore'

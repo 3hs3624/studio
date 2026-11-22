@@ -21,12 +21,12 @@ DB와 web은 호스트 포트를 공개하지 않으며, proxy만 127.0.0.1의 1
 - Docker Desktop 또는 Docker Engine + Compose v2.24 이상
 - Python 3.10 이상 (Windows에서는 아래 python3 대신 python 사용)
 - 소스 저장 공간 외에 Docker 이미지·DB를 위한 여유 디스크 최소 4GB 권장
-- 저장소의 feature/incident-workflow 브랜치
+- 저장소의 main 브랜치
 
 저장소 최상위 폴더에서 실행합니다.
 
 ```bash
-git clone --branch feature/incident-workflow https://github.com/3hs3624/studio.git
+git clone --branch main https://github.com/3hs3624/studio.git
 cd studio
 python3 deploy/local_split/control.py configure
 python3 deploy/local_split/control.py check-config

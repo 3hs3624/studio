@@ -83,7 +83,7 @@ MFA 비밀은 Fernet으로 암호화하고 복구 코드는 해시로 저장하�
 동일 소스와 마이그레이션을 기존 Render/Neon 및 로컬 AP·DB Docker에 사용합니다.
 배포 시 기존 계정·비밀번호와 업무 데이터는 보존하며 인증 처리 변경으로 재로그인이 필요할 수 있습니다.
 
-로컬 PC는 최신 `feature/incident-workflow` 소스를 받은 후 기존 `.env.ap`, `.env.db`, `access/accounts.json` 및 DB 볼륨을 유지하십시오.
+로컬 PC는 최신 `main` 소스를 받은 후 기존 `.env.ap`, `.env.db`, `access/accounts.json` 및 DB 볼륨을 유지하십시오.
 ZIP 방식이면 압축 파일을 별도 폴더에 풀고 소스만 기존 폴더에 덮어쓰며 비공개 설정 파일을 삭제하거나 재생성하지 마십시오.
 
 ```powershell
